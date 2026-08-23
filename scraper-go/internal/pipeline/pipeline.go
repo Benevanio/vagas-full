@@ -58,9 +58,22 @@ func Run(ctx context.Context, adapterList []ports.JobSource, req domain.ScrapeRe
 	results := make(chan result, len(tasks))
 	var wg sync.WaitGroup
 
+schedule:
 	for _, t := range tasks {
+		if ctx.Err() != nil {
+			break schedule
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break schedule
+		}
+		if ctx.Err() != nil {
+			<-sem
+			break schedule
+		}
+
 		wg.Add(1)
-		sem <- struct{}{}
 
 		go func(t adapterTask) {
 			defer wg.Done()
@@ -109,6 +122,9 @@ func Run(ctx context.Context, adapterList []ports.JobSource, req domain.ScrapeRe
 			allJobs = append(allJobs, r.jobs...)
 		}
 	}
+	if cause := context.Cause(ctx); cause != nil {
+		return nil, cause
+	}
 
 	deduped := dedup.DedupeJobs(allJobs)
 	classified := classifier.ClassifyJobs(deduped)
@@ -134,7 +150,7 @@ func runAdapterTask(ctx context.Context, t adapterTask, req domain.ScrapeRequest
 }
 
 func IndexJobsInValkey(ctx context.Context, rdb *redis.Client, jobs []domain.Job, keywords []string) {
-	if rdb == nil || len(jobs) == 0 {
+	if rdb == nil || len(jobs) == 0 || ctx.Err() != nil {
 		return
 	}
 
@@ -157,6 +173,9 @@ func IndexJobsInValkey(ctx context.Context, rdb *redis.Client, jobs []domain.Job
 	kwIndex := make(map[string][]string) // finalKey → []id
 
 	for _, job := range jobs {
+		if ctx.Err() != nil {
+			return
+		}
 		id := jobstore.StableID(&job)
 		if id == "" {
 			continue
@@ -203,6 +222,9 @@ func IndexJobsInValkey(ctx context.Context, rdb *redis.Client, jobs []domain.Job
 	// Publica os índices de keyword com RENAME atômico
 	// Fluxo: escreve em :next → RENAME :next → final → Expire no final
 	for finalKey, ids := range kwIndex {
+		if ctx.Err() != nil {
+			return
+		}
 		tempKey := finalKey + ":next"
 
 		pipe := rdb.Pipeline()

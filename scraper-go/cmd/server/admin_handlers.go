@@ -3,30 +3,47 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/cronjob"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/jobstore"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/runlock"
 )
 
 // handleTriggerScrape dispara o scraper manualmente via POST /admin/scrape
 // retorna 409 se já houver uma execução em andamento.
-func handleTriggerScrape(scheduler *cronjob.Scheduler) http.HandlerFunc {
+func handleTriggerScrape(scheduler *cronjob.Scheduler, executionCtx context.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A execução manual precisa sobreviver ao fim da request HTTP; se usarmos
 		// r.Context(), o scraper nasce com contexto cancelado assim que respondemos.
-		if err := scheduler.RunNow(context.Background()); err != nil {
-			if err == cronjob.ErrAlreadyRunning {
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]any{
-					"ok":      false,
-					"message": "scraper já está em execução",
-				})
+		if err := scheduler.RunNow(executionCtx); err != nil {
+			if errors.Is(err, cronjob.ErrAlreadyRunning) {
+				writeScraperError(
+					w,
+					http.StatusConflict,
+					"SCRAPER_ALREADY_RUNNING",
+					"Já existe uma execução do scraper em andamento.",
+				)
 				return
 			}
-			http.Error(w, "erro ao iniciar scraper", http.StatusInternalServerError)
+			if errors.Is(err, cronjob.ErrLockUnavailable) {
+				writeScraperError(
+					w,
+					http.StatusServiceUnavailable,
+					"SCRAPER_RUN_LOCK_UNAVAILABLE",
+					"Não foi possível confirmar a disponibilidade do scraper.",
+				)
+				return
+			}
+			writeScraperError(
+				w,
+				http.StatusInternalServerError,
+				"SCRAPER_START_FAILED",
+				"Erro ao iniciar scraper.",
+			)
 			return
 		}
 
@@ -35,6 +52,47 @@ func handleTriggerScrape(scheduler *cronjob.Scheduler) http.HandlerFunc {
 			"ok":      true,
 			"message": "scraper iniciado em background",
 		})
+	}
+}
+
+func writeScraperError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":      false,
+		"code":    code,
+		"message": message,
+	})
+}
+
+func mapRunLockError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, runlock.ErrAlreadyHeld):
+		writeScraperError(
+			w,
+			http.StatusConflict,
+			"SCRAPER_ALREADY_RUNNING",
+			"Já existe uma execução do scraper em andamento.",
+		)
+		return true
+	case errors.Is(err, runlock.ErrUnavailable):
+		writeScraperError(
+			w,
+			http.StatusServiceUnavailable,
+			"SCRAPER_RUN_LOCK_UNAVAILABLE",
+			"Não foi possível confirmar a disponibilidade do scraper.",
+		)
+		return true
+	case errors.Is(err, runlock.ErrLost):
+		writeScraperError(
+			w,
+			http.StatusServiceUnavailable,
+			"SCRAPER_RUN_LOCK_LOST",
+			"A execução perdeu o lock distribuído e foi cancelada.",
+		)
+		return true
+	default:
+		return false
 	}
 }
 

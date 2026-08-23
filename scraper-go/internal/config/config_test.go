@@ -1,7 +1,10 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,11 +18,16 @@ func TestLoadRuntimeConfigUsesDefaultWhenEnvMissing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 12, cfg.MaxConcurrency)
 	assert.Equal(t, SourceInternalDefault, cfg.MaxConcurrencySource)
+	assert.Equal(t, 120*time.Second, cfg.RunLockTTL)
+	assert.Equal(t, 30*time.Second, cfg.RunLockRenewInterval)
 }
 
 func TestLoadRuntimeConfigUsesEnvValue(t *testing.T) {
-	cfg, err := LoadRuntimeConfigFromLookup(func(string) (string, bool) {
-		return "8", true
+	cfg, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+		if key == ScraperMaxConcurrencyEnv {
+			return "8", true
+		}
+		return "", false
 	})
 
 	require.NoError(t, err)
@@ -55,4 +63,121 @@ func TestResolveEffectiveConcurrency(t *testing.T) {
 	assert.Equal(t, 12, ResolveEffectiveConcurrency(-1, 12))
 	assert.Equal(t, 8, ResolveEffectiveConcurrency(8, 12))
 	assert.Equal(t, 12, ResolveEffectiveConcurrency(40, 12))
+}
+
+func TestLoadRuntimeConfigUsesRunLockDurationsFromEnvironment(t *testing.T) {
+	values := map[string]string{
+		ScraperRunLockTTLEnv:           "3m",
+		ScraperRunLockRenewIntervalEnv: "45s",
+	}
+
+	cfg, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3*time.Minute, cfg.RunLockTTL)
+	assert.Equal(t, 45*time.Second, cfg.RunLockRenewInterval)
+}
+
+func TestLoadRuntimeConfigRejectsInvalidRunLockDurations(t *testing.T) {
+	cases := []struct {
+		name   string
+		values map[string]string
+	}{
+		{
+			name:   "empty ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: ""},
+		},
+		{
+			name:   "blank ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: "   "},
+		},
+		{
+			name:   "empty renewal interval",
+			values: map[string]string{ScraperRunLockRenewIntervalEnv: ""},
+		},
+		{
+			name:   "blank renewal interval",
+			values: map[string]string{ScraperRunLockRenewIntervalEnv: "   "},
+		},
+		{
+			name:   "invalid ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: "invalid"},
+		},
+		{
+			name:   "zero ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: "0s"},
+		},
+		{
+			name:   "negative renewal interval",
+			values: map[string]string{ScraperRunLockRenewIntervalEnv: "-1s"},
+		},
+		{
+			name: "renewal equals ttl",
+			values: map[string]string{
+				ScraperRunLockTTLEnv:           "30s",
+				ScraperRunLockRenewIntervalEnv: "30s",
+			},
+		},
+		{
+			name: "renewal exceeds ttl",
+			values: map[string]string{
+				ScraperRunLockTTLEnv:           "30s",
+				ScraperRunLockRenewIntervalEnv: "31s",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+				value, ok := tc.values[key]
+				return value, ok
+			})
+
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestDockerComposeUsesUnsetOnlyDefaultsForRunLock(t *testing.T) {
+	composePath, ok := findMonorepoFile(t, "docker-compose.yml")
+	if !ok {
+		t.Skip("docker-compose.yml not available outside the monorepo checkout")
+	}
+
+	content, err := os.ReadFile(composePath)
+	require.NoError(t, err)
+
+	compose := string(content)
+	assert.Contains(t, compose, "SCRAPER_MAX_CONCURRENCY=${SCRAPER_MAX_CONCURRENCY-12}")
+	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL-120s}")
+	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}")
+	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL:-120s}")
+	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL:-30s}")
+}
+
+func findMonorepoFile(t *testing.T, name string) (string, bool) {
+	t.Helper()
+
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+
+	for {
+		candidate := filepath.Join(dir, name)
+		scraperMod := filepath.Join(dir, "scraper-go", "go.mod")
+		if _, err := os.Stat(candidate); err == nil {
+			if _, err := os.Stat(scraperMod); err == nil {
+				return candidate, true
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }

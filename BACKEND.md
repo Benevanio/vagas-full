@@ -201,6 +201,10 @@ Base: `/`
   - `PATCH /admin/users/:id/unblock` — desbloqueia usuário.
   - `POST /admin/users/:id/reset` — reseta credenciais/senha conforme regra do serviço.
   - `POST /admin/scrapers/run` — dispara execução dos scrapers.
+    - Sucesso: `202` com `{ ok: true, message }`.
+    - Execução concorrente: `409` com `{ ok: false, code: "SCRAPER_ALREADY_RUNNING", message }`.
+    - Lock/Valkey indisponível: `503` com `{ ok: false, code: "SCRAPER_RUN_LOCK_UNAVAILABLE", message }`.
+  - `POST /admin/scrapers/:id/run` — aplica o mesmo contrato ao scraper nomeado (`go-scraper`).
   - `GET /admin/observability/metrics` — visão de métricas administrativas.
   - `GET /admin/observability/dashboards` — lista dashboards de observabilidade.
   - `GET /admin/audit` — consulta logs de auditoria.
@@ -250,6 +254,7 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 - `goScraper.ts` faz POST em `${GO_SCRAPER_URL}/scrape` com `ScrapeParams` e valida `ScrapeResponse`.
 - `goKeywords.ts` consulta e publica keywords via endpoints do serviço Go (`/api/keywords`).
 - O backend lê os índices criados pelo scraper no Valkey, incluindo `scraper:jobs:keyword:*`, `scraper:jobs:family:*`, `scraper:jobs:technology:*` e `scraper:jobs:seniority:*`.
+- Disparos administrativos usam `scraperClient` e preservam os códigos operacionais do serviço Go. O código `SCRAPER_ALREADY_RUNNING` é um conflito esperado; `SCRAPER_RUN_LOCK_UNAVAILABLE` indica política fail-closed e não inicia coleta.
 
 ## Banco de dados
 

@@ -25,6 +25,17 @@ export const TriggerScrapeResultSchema = z.object({
 });
 export type TriggerScrapeResult = z.infer<typeof TriggerScrapeResultSchema>;
 
+export const TriggerScrapeErrorSchema = z.object({
+  ok: z.literal(false),
+  code: z.enum([
+    "SCRAPER_ALREADY_RUNNING",
+    "SCRAPER_RUN_LOCK_UNAVAILABLE",
+    "SCRAPER_RUN_LOCK_LOST",
+  ]),
+  message: z.string(),
+});
+export type TriggerScrapeError = z.infer<typeof TriggerScrapeErrorSchema>;
+
 // --- ScraperStatus ---
 export const ScraperStatusSchema = z.object({
   name: z.string().optional(),

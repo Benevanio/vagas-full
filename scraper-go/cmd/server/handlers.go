@@ -14,6 +14,7 @@ import (
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/keywords"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/pipeline"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/runlock"
 )
 
 const (
@@ -21,7 +22,14 @@ const (
 	scrapeTimeout = 15 * time.Minute
 )
 
-func handleScrape(adapterList []ports.JobSource, kwStore *keywords.Store, c cache.Cache, rdb *redis.Client, runtimeCfg config.RuntimeConfig) http.HandlerFunc {
+func handleScrape(
+	adapterList []ports.JobSource,
+	kwStore *keywords.Store,
+	c cache.Cache,
+	rdb *redis.Client,
+	runLock *runlock.Manager,
+	runtimeCfg config.RuntimeConfig,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req domain.ScrapeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -46,8 +54,20 @@ func handleScrape(adapterList []ports.JobSource, kwStore *keywords.Store, c cach
 
 		start := time.Now()
 
-		result, err := pipeline.SearchJobs(ctx, c, searchConfig, adapterList, scrapeTTL, rdb)
+		result, err := pipeline.SearchJobs(
+			ctx,
+			c,
+			searchConfig,
+			adapterList,
+			scrapeTTL,
+			rdb,
+			runLock,
+			"public_endpoint",
+		)
 		if err != nil {
+			if mapRunLockError(w, err) {
+				return
+			}
 			http.Error(w, "Erro ao buscar vagas.", http.StatusInternalServerError)
 			return
 		}

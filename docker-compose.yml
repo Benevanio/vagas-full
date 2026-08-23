@@ -14,6 +14,8 @@ services:
       - GO_SCRAPER_ADDR=:8081
       - VALKEY_URL=redis://valkey:6379/0
       - SCRAPER_MAX_CONCURRENCY=${SCRAPER_MAX_CONCURRENCY-12}
+      - SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL-120s}
+      - SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}
       - GOMAXPROCS=${GOMAXPROCS:-2}
       - GOMEMLIMIT=${GOMEMLIMIT:-1500MiB}
       - GUPY_ENABLED=${GUPY_ENABLED:-true}
@@ -31,8 +33,8 @@ services:
       - LEVER_ENABLED=${LEVER_ENABLED:-false}
       - LEVER_COMPANIES_FILE=/app/internal/interfaces/leverCompanies.json
       - LEVER_INCLUDE_ALL_JOBS=${LEVER_INCLUDE_ALL_JOBS:-true}
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8081/health"]
       interval: 5s

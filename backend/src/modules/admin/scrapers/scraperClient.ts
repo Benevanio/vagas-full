@@ -11,9 +11,22 @@ const TIMEOUT_MS = 5000;
 
 /** Lançado quando o Go scraper responde 409 (já em execução) */
 export class ScraperAlreadyRunningError extends Error {
-  constructor(message = "scraper já está em execução") {
+  readonly code = "SCRAPER_ALREADY_RUNNING";
+
+  constructor(message = "Já existe uma execução do scraper em andamento.") {
     super(message);
     this.name = "ScraperAlreadyRunningError";
+  }
+}
+
+export class ScraperRunLockUnavailableError extends Error {
+  readonly code = "SCRAPER_RUN_LOCK_UNAVAILABLE";
+
+  constructor(
+    message = "Não foi possível confirmar a disponibilidade do scraper.",
+  ) {
+    super(message);
+    this.name = "ScraperRunLockUnavailableError";
   }
 }
 
@@ -26,6 +39,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 409) {
     const body = await response.json().catch(() => null);
     throw new ScraperAlreadyRunningError(body?.message);
+  }
+
+  if (response.status === 503) {
+    const body = await response.json().catch(() => null);
+    throw new ScraperRunLockUnavailableError(body?.message);
   }
 
   if (!response.ok) {
