@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import type { AuditService } from "../audit/audit.service";
-import { ScraperAlreadyRunningError } from "./scraperClient";
+import {
+  ScraperAlreadyRunningError,
+  ScraperRunLockUnavailableError,
+} from "./scraperClient";
 import { ScrapersService } from "./scrapers.service";
 
 export class ScrapersController {
@@ -18,7 +21,19 @@ export class ScrapersController {
       res.status(202).json(result);
     } catch (error) {
       if (error instanceof ScraperAlreadyRunningError) {
-        res.status(409).json({ ok: false, message: error.message });
+        res.status(409).json({
+          ok: false,
+          code: error.code,
+          message: error.message,
+        });
+        return;
+      }
+      if (error instanceof ScraperRunLockUnavailableError) {
+        res.status(503).json({
+          ok: false,
+          code: error.code,
+          message: error.message,
+        });
         return;
       }
       res.status(500).json({ ok: false, message: "erro ao iniciar scraper" });
@@ -38,12 +53,25 @@ export class ScrapersController {
       res.status(202).json({ ...result, scraper: scraperName });
     } catch (error) {
       if (error instanceof ScraperAlreadyRunningError) {
-        res.status(409).json({ ok: false, message: error.message });
+        res.status(409).json({
+          ok: false,
+          code: error.code,
+          message: error.message,
+        });
+        return;
+      }
+      if (error instanceof ScraperRunLockUnavailableError) {
+        res.status(503).json({
+          ok: false,
+          code: error.code,
+          message: error.message,
+        });
         return;
       }
 
       const message =
-        error instanceof Error && error.message.startsWith("scraper desconhecido")
+        error instanceof Error &&
+        error.message.startsWith("scraper desconhecido")
           ? error.message
           : "erro ao iniciar scraper";
 
@@ -87,7 +115,8 @@ export class ScrapersController {
   async listJobs(req: Request, res: Response): Promise<void> {
     try {
       const rawLimit = Number(req.query?.limit);
-      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
+      const limit =
+        Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
       const result = await this.scrapersService.getJobs(limit);
 
       this.auditService.fromRequest(req, "scrapers.read", {

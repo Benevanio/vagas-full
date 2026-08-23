@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,23 @@ type batchRunTestAdapter struct {
 	searchCalls int
 	batchCalls  int
 	keywords    []string
+}
+
+type cancelAwareAdapter struct {
+	started chan struct{}
+	calls   atomic.Int32
+}
+
+func (a *cancelAwareAdapter) SourceName() string {
+	return "Cancel Test"
+}
+
+func (a *cancelAwareAdapter) Search(ctx context.Context, _ string, _ domain.ScrapeRequest) ([]domain.Job, error) {
+	if a.calls.Add(1) == 1 {
+		close(a.started)
+	}
+	<-ctx.Done()
+	return nil, context.Cause(ctx)
 }
 
 func (a *batchRunTestAdapter) SourceName() string {
@@ -120,4 +138,29 @@ func TestRunExecutesWithValidMaxConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, jobs)
 	assert.Equal(t, 1, adapter.batchCalls)
+}
+
+func TestRunStopsSchedulingAdaptersAfterContextCancellation(t *testing.T) {
+	adapter := &cancelAwareAdapter{started: make(chan struct{})}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := Run(ctx, []adapters.Adapter{adapter}, domain.ScrapeRequest{
+			Keywords:       []string{"go", "java", "python"},
+			MaxConcurrency: 1,
+		})
+		result <- err
+	}()
+
+	select {
+	case <-adapter.started:
+	case <-time.After(time.Second):
+		t.Fatal("first adapter did not start")
+	}
+	lostErr := assert.AnError
+	cancel(lostErr)
+
+	require.ErrorIs(t, <-result, lostErr)
+	assert.Equal(t, int32(1), adapter.calls.Load())
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/jobstore"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/keywords"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/runlock"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 )
@@ -42,28 +43,39 @@ func run(adapterList []ports.JobSource, runtimeCfg config.RuntimeConfig) {
 	// ── Módulos ──
 	kwStore := keywords.NewStore(c)
 	jobStore := jobstore.New(rdb)
+	runLock, err := runlock.New(runlock.NewValkeyStore(rdb), runlock.Config{
+		TTL:           runtimeCfg.RunLockTTL,
+		RenewInterval: runtimeCfg.RunLockRenewInterval,
+	})
+	if err != nil {
+		slog.Error("configuração inválida do lock distribuído", "error", err)
+		os.Exit(1)
+	}
 
 	// ── Scheduler (cronjob) ──
 	schedulerCfg := cronjob.DefaultConfig()
 	schedulerCfg.MaxConcurrency = runtimeCfg.MaxConcurrency
-	scheduler := cronjob.New(schedulerCfg, kwStore, jobStore, adapterList, rdb)
+	scheduler := cronjob.New(schedulerCfg, kwStore, jobStore, adapterList, rdb, runLock)
 
 	scheduler.OnComplete = func(kws []string, scraped, saved int, duration time.Duration) {
 		printSummary(len(adapterList), kws, scraped, duration)
 	}
 
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+
 	// ── Rotas ──
 	mux := http.NewServeMux()
 
 	// Públicas
-	mux.Handle("POST /scrape", handleScrape(adapterList, kwStore, c, rdb, runtimeCfg))
+	mux.Handle("POST /scrape", handleScrape(adapterList, kwStore, c, rdb, runLock, runtimeCfg))
 	mux.Handle("GET /health", handleHealth(c))
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /api/keywords", handleGetKeywords(kwStore))
 	mux.Handle("POST /api/keywords", handleSaveKeywords(kwStore))
 
 	// Administrativas
-	mux.Handle("POST /admin/scrape", handleTriggerScrape(scheduler))
+	mux.Handle("POST /admin/scrape", handleTriggerScrape(scheduler, bgCtx))
 	mux.Handle("GET /admin/scrape/status", handleScraperStatus(scheduler))
 	mux.Handle("GET /admin/jobs", handleGetJobs(jobStore))
 	mux.Handle("GET /admin/jobs/count", handleJobsCount(jobStore))
@@ -77,8 +89,6 @@ func run(adapterList []ports.JobSource, runtimeCfg config.RuntimeConfig) {
 	}
 
 	// ── Background: inicia o scheduler ──
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	defer bgCancel()
 	scheduler.Start(bgCtx)
 
 	// ── Graceful shutdown ──
@@ -99,7 +109,10 @@ func run(adapterList []ports.JobSource, runtimeCfg config.RuntimeConfig) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	scheduler.Stop()
+	bgCancel()
+	if err := scheduler.Shutdown(shutdownCtx); err != nil {
+		slog.Error("erro ao aguardar liberação do lock no shutdown", "error", err)
+	}
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("erro durante o shutdown", "error", err)

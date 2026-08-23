@@ -49,6 +49,8 @@ func logRuntimeConfig(cfg config.RuntimeConfig) {
 	slog.Info("scraper runtime configurado",
 		"max_concurrency", cfg.MaxConcurrency,
 		"max_concurrency_source", cfg.MaxConcurrencySource,
+		"run_lock_ttl", cfg.RunLockTTL,
+		"run_lock_renew_interval", cfg.RunLockRenewInterval,
 		"gomaxprocs_effective", runtime.GOMAXPROCS(0),
 		"gomaxprocs_source", envSource(gomaxprocsSet),
 		"gomemlimit_effective_bytes", memLimit,

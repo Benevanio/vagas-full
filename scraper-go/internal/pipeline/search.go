@@ -12,6 +12,7 @@ import (
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/inflight"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/runlock"
 )
 
 type SearchResult struct {
@@ -28,6 +29,8 @@ func SearchJobs(
 	adapterList []ports.JobSource,
 	ttl time.Duration,
 	rdb *redis.Client,
+	runLock *runlock.Manager,
+	source string,
 ) (SearchResult, error) {
 	config = normalizeSearchConfig(config)
 	cacheKey := BuildCacheKey(config)
@@ -39,7 +42,7 @@ func SearchJobs(
 		return result, nil
 	}
 
-	return inflight.Do(cacheKey, func() (SearchResult, error) {
+	return inflight.Do(cacheKey, func() (result SearchResult, resultErr error) {
 		if result, found, err := cache.GetAs[SearchResult](c, ctx, cacheKey); err != nil {
 			return SearchResult{}, fmt.Errorf("pipeline.SearchJobs: cache re-check: %w", err)
 		} else if found {
@@ -47,21 +50,43 @@ func SearchJobs(
 			return result, nil
 		}
 
-		jobs, err := ScrapeAllSources(ctx, config, adapterList, rdb)
+		if runLock == nil {
+			return SearchResult{}, fmt.Errorf("%w: lock service is not configured", runlock.ErrUnavailable)
+		}
+		lease, err := runLock.Acquire(ctx, source)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		defer func() {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := lease.Release(releaseCtx); err != nil && resultErr == nil {
+				resultErr = err
+			}
+		}()
+
+		runCtx := lease.Context()
+		jobs, err := ScrapeAllSources(runCtx, config, adapterList, rdb)
 		if err != nil {
 			return SearchResult{}, fmt.Errorf("pipeline.SearchJobs: scrape: %w", err)
 		}
+		if err := context.Cause(runCtx); err != nil {
+			return SearchResult{}, err
+		}
 
-		IndexJobsInValkey(ctx, rdb, jobs, config.Keywords)
+		IndexJobsInValkey(runCtx, rdb, jobs, config.Keywords)
+		if err := context.Cause(runCtx); err != nil {
+			return SearchResult{}, err
+		}
 
-		result := SearchResult{
+		result = SearchResult{
 			Jobs:      jobs,
 			Total:     len(jobs),
 			CachedAt:  time.Now(),
 			FromCache: false,
 		}
 
-		if err := c.Set(ctx, cacheKey, result, ttl); err != nil {
+		if err := c.Set(runCtx, cacheKey, result, ttl); err != nil {
 			slog.Error("pipeline.SearchJobs: cache write failed",
 				"key", cacheKey,
 				"error", err,

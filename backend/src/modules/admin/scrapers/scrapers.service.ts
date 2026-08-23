@@ -1,4 +1,8 @@
-import { ScraperAlreadyRunningError, scraperClient } from "./scraperClient";
+import {
+  ScraperAlreadyRunningError,
+  ScraperRunLockUnavailableError,
+  scraperClient,
+} from "./scraperClient";
 import type {
   AdminScraper,
   GetJobsResult,
@@ -13,7 +17,10 @@ export class ScrapersService {
     try {
       return await scraperClient.triggerScrape();
     } catch (error) {
-      if (error instanceof ScraperAlreadyRunningError) {
+      if (
+        error instanceof ScraperAlreadyRunningError ||
+        error instanceof ScraperRunLockUnavailableError
+      ) {
         // repropaga para o controller decidir o status HTTP (409)
         throw error;
       }

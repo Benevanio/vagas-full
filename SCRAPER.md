@@ -193,7 +193,7 @@ go run ./cmd/server
 
 Docker: há um `Dockerfile` em `scraper-go/`. No Docker Compose, configure `VALKEY_URL=redis://valkey:6379/0` no `.env` da raiz para que o scraper acesse o Valkey pelo nome do serviço na rede Docker.
 
-No Compose da raiz, o serviço escuta em <http://localhost:8081>.
+No Compose da raiz, a porta `8081` fica exposta apenas na rede interna `vagas-net`; ela não é publicada no host. O backend acessa o serviço por `http://scraper-go:8081`. Para testes locais diretos, execute o binário fora do Compose ou use um override de desenvolvimento que publique a porta somente em interface confiável.
 
 ### Limites globais de execução
 
@@ -206,7 +206,28 @@ O scraper possui um orçamento global de concorrência por execução controlado
 - `POST /scrape` preserva o contrato atual: quando `maxConcurrency` não é informado, ou vem como `0`/negativo, usa o limite global; quando vem positivo abaixo do teto, usa o valor solicitado; quando vem acima do teto, usa o teto global.
 - A concorrência efetiva é calculada antes da chave de cache e é o mesmo valor usado pelo pipeline, logs e semáforo.
 
-O semáforo global atual é criado uma vez por chamada do pipeline. Portanto, o limite é por execução: duas execuções simultâneas ainda podem possuir dois semáforos independentes com a mesma capacidade. Lock entre cron/manual, prevenção de simultaneidade e limites por provider pertencem às próximas sub-issues.
+O semáforo global atual é criado uma vez por chamada do pipeline. O lock distribuído abaixo impede que duas execuções mantenham semáforos independentes ao mesmo tempo; limites específicos por provider permanecem para uma sub-issue posterior.
+
+### Lock distribuído de execução
+
+Todas as origens que iniciam adapters compartilham o lock `scraper:run:lock` no Valkey:
+
+- cron (`source=cron`);
+- disparo administrativo (`source=admin_manual`);
+- cache miss de `POST /scrape` (`source=public_endpoint`).
+
+Cache hits de `POST /scrape` não executam adapters e, por isso, não adquirem o lock. A aquisição usa `SET ... NX PX` com token aleatório por execução. Renovação e liberação usam scripts Lua que comparam o token; não existe `DEL` incondicional. O estado informativo fica no hash `scraper:run:state`, com `runId`, `source`, `startedAt` e `lockExpiresAt`, e possui o mesmo TTL do lock.
+
+Configuração:
+
+- `SCRAPER_RUN_LOCK_TTL`: padrão `120s`;
+- `SCRAPER_RUN_LOCK_RENEW_INTERVAL`: padrão `30s`, obrigatoriamente positivo e menor que o TTL.
+
+No Compose, ambas usam substituição `${VAR-default}` (não `:-`), no mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`: variável ausente aplica o default; valor explícito vazio ou inválido chega ao parser Go e impede a inicialização.
+
+O mecanismo é fail-closed: se o Valkey não confirmar a aquisição, nenhum adapter é iniciado. Erros temporários de renovação são tolerados até a margem segura; perda confirmada do token ou ausência de confirmação antes dessa margem cancela o contexto da execução. A liberação ocorre no encerramento e só remove chaves pertencentes ao token atual; em crash abrupto, o TTL é a proteção final. No graceful shutdown, o scheduler deixa de aceitar novos disparos e aguarda as execuções ativas liberarem o lock antes do processo encerrar.
+
+O token proprietário nunca é gravado no estado operacional nem nos logs. Um `runId` independente identifica a execução para observabilidade sem expor a credencial usada pelos scripts de renovação e liberação.
 
 No Docker Compose de produção, o serviço `scraper-go` também define:
 
@@ -224,7 +245,7 @@ O serviço expõe endpoints HTTP (implementação em `cmd/server` e arquivos ass
 - GET `/metrics` — métricas Prometheus.
 - GET `/api/keywords` — retorna as keywords atualmente carregadas.
 - POST `/api/keywords` — atualiza/persiste as keywords (aceita `keywords: string[]`).
-- POST `/admin/scrape` — dispara uma execução manual em background; retorna 409 se já houver execução em andamento.
+- POST `/admin/scrape` — dispara uma execução manual em background; retorna `409` com `SCRAPER_ALREADY_RUNNING` se já houver execução e `503` com `SCRAPER_RUN_LOCK_UNAVAILABLE` se o Valkey não confirmar a aquisição.
 - GET `/admin/scrape/status` — informa se existe uma execução em andamento.
 - GET `/admin/jobs/count` — retorna a quantidade de vagas persistidas no Valkey.
 - GET `/admin/jobs` — lista uma amostra das vagas persistidas no Valkey; aceita `limit`.
@@ -356,6 +377,8 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 
 - `VALKEY_URL` — conexão Redis/Valkey. Em Docker Compose, use `redis://valkey:6379/0`; em execução local fora do Docker, use uma URL acessível pelo host, por exemplo `redis://localhost:6379/0`.
 - `SCRAPER_MAX_CONCURRENCY` — teto global de concorrência por execução. Padrão: `12`. Configuração explícita inválida impede a inicialização.
+- `SCRAPER_RUN_LOCK_TTL` — duração do lock distribuído. Padrão: `120s`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_TTL-120s}` (mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`).
+- `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}`.
 - `GOMAXPROCS` — limite efetivo de threads executando código Go simultaneamente. Valor inicial no Compose: `2`.
 - `GOMEMLIMIT` — meta de memória do runtime/GC. Valor inicial no Compose: `1500MiB`; não substitui `mem_limit` do container.
 - `JOOBLE_API_KEY` — Jooble integration.
@@ -376,3 +399,16 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 - Projetado para rodar frequentemente; use caching e indexação para reduzir chamadas repetidas.
 - Monitorar erros 429 e ajustar `WaitBetweenSearchesMs` / semáforos por adaptador.
 - Verifique logs estruturados (slog JSON) e `/metrics` para métricas de sucesso/falhas por adaptador.
+- Logs `scraper run lock acquired`, `scraper execution skipped`, `scraper run lock lost` e `scraper run lock released` identificam `source` e `run_id`.
+
+### Verificação operacional do lock
+
+Durante uma execução controlada:
+
+```bash
+docker exec vagas-valkey valkey-cli GET scraper:run:lock
+docker exec vagas-valkey valkey-cli PTTL scraper:run:lock
+docker exec vagas-valkey valkey-cli HGETALL scraper:run:state
+```
+
+Uma segunda execução manual deve retornar conflito sem iniciar adapters. Após o término, as duas chaves devem desaparecer. Nunca remova a chave manualmente apenas porque ela existe: primeiro confirme que não há processo correspondente ativo e registre valor e TTL.
