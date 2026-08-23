@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -85,6 +87,22 @@ func TestLoadRuntimeConfigRejectsInvalidRunLockDurations(t *testing.T) {
 		values map[string]string
 	}{
 		{
+			name:   "empty ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: ""},
+		},
+		{
+			name:   "blank ttl",
+			values: map[string]string{ScraperRunLockTTLEnv: "   "},
+		},
+		{
+			name:   "empty renewal interval",
+			values: map[string]string{ScraperRunLockRenewIntervalEnv: ""},
+		},
+		{
+			name:   "blank renewal interval",
+			values: map[string]string{ScraperRunLockRenewIntervalEnv: "   "},
+		},
+		{
 			name:   "invalid ttl",
 			values: map[string]string{ScraperRunLockTTLEnv: "invalid"},
 		},
@@ -121,5 +139,45 @@ func TestLoadRuntimeConfigRejectsInvalidRunLockDurations(t *testing.T) {
 
 			require.Error(t, err)
 		})
+	}
+}
+
+func TestDockerComposeUsesUnsetOnlyDefaultsForRunLock(t *testing.T) {
+	composePath, ok := findMonorepoFile(t, "docker-compose.yml")
+	if !ok {
+		t.Skip("docker-compose.yml not available outside the monorepo checkout")
+	}
+
+	content, err := os.ReadFile(composePath)
+	require.NoError(t, err)
+
+	compose := string(content)
+	assert.Contains(t, compose, "SCRAPER_MAX_CONCURRENCY=${SCRAPER_MAX_CONCURRENCY-12}")
+	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL-120s}")
+	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}")
+	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL:-120s}")
+	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL:-30s}")
+}
+
+func findMonorepoFile(t *testing.T, name string) (string, bool) {
+	t.Helper()
+
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+
+	for {
+		candidate := filepath.Join(dir, name)
+		scraperMod := filepath.Join(dir, "scraper-go", "go.mod")
+		if _, err := os.Stat(candidate); err == nil {
+			if _, err := os.Stat(scraperMod); err == nil {
+				return candidate, true
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
 	}
 }

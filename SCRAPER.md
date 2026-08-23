@@ -223,6 +223,8 @@ Configuração:
 - `SCRAPER_RUN_LOCK_TTL`: padrão `120s`;
 - `SCRAPER_RUN_LOCK_RENEW_INTERVAL`: padrão `30s`, obrigatoriamente positivo e menor que o TTL.
 
+No Compose, ambas usam substituição `${VAR-default}` (não `:-`), no mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`: variável ausente aplica o default; valor explícito vazio ou inválido chega ao parser Go e impede a inicialização.
+
 O mecanismo é fail-closed: se o Valkey não confirmar a aquisição, nenhum adapter é iniciado. Erros temporários de renovação são tolerados até a margem segura; perda confirmada do token ou ausência de confirmação antes dessa margem cancela o contexto da execução. A liberação ocorre no encerramento e só remove chaves pertencentes ao token atual; em crash abrupto, o TTL é a proteção final. No graceful shutdown, o scheduler deixa de aceitar novos disparos e aguarda as execuções ativas liberarem o lock antes do processo encerrar.
 
 O token proprietário nunca é gravado no estado operacional nem nos logs. Um `runId` independente identifica a execução para observabilidade sem expor a credencial usada pelos scripts de renovação e liberação.
@@ -375,8 +377,8 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 
 - `VALKEY_URL` — conexão Redis/Valkey. Em Docker Compose, use `redis://valkey:6379/0`; em execução local fora do Docker, use uma URL acessível pelo host, por exemplo `redis://localhost:6379/0`.
 - `SCRAPER_MAX_CONCURRENCY` — teto global de concorrência por execução. Padrão: `12`. Configuração explícita inválida impede a inicialização.
-- `SCRAPER_RUN_LOCK_TTL` — duração do lock distribuído. Padrão: `120s`.
-- `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`.
+- `SCRAPER_RUN_LOCK_TTL` — duração do lock distribuído. Padrão: `120s`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_TTL-120s}` (mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`).
+- `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}`.
 - `GOMAXPROCS` — limite efetivo de threads executando código Go simultaneamente. Valor inicial no Compose: `2`.
 - `GOMEMLIMIT` — meta de memória do runtime/GC. Valor inicial no Compose: `1500MiB`; não substitui `mem_limit` do container.
 - `JOOBLE_API_KEY` — Jooble integration.

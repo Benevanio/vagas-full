@@ -89,7 +89,12 @@ func durationFromLookup(
 		return fallback, nil
 	}
 
-	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("%s must be a valid positive duration", key)
+	}
+
+	parsed, err := time.ParseDuration(trimmed)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a valid positive duration: %w", key, err)
 	}
