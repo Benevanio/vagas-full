@@ -16,6 +16,7 @@ import (
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters/adapterutil"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 )
 
 const (
@@ -37,23 +38,28 @@ type AdzunaAdapter struct {
 	appID      string
 	appKey     string
 	country    string
-	semaphore  chan struct{}
 	mu         sync.Mutex
 	nextOffset int
 }
 
 func NewAdzuna(appID, appKey, country string) *AdzunaAdapter {
 	return &AdzunaAdapter{
-		client:    &http.Client{Timeout: 60 * time.Second},
-		appID:     appID,
-		appKey:    appKey,
-		country:   strings.ToLower(strings.TrimSpace(country)),
-		semaphore: make(chan struct{}, 3),
+		client:  &http.Client{Timeout: 60 * time.Second},
+		appID:   appID,
+		appKey:  appKey,
+		country: strings.ToLower(strings.TrimSpace(country)),
 	}
 }
 
 func (a *AdzunaAdapter) SourceName() string {
 	return fmt.Sprintf("Adzuna:%s", a.country)
+}
+
+func (a *AdzunaAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderAdzuna,
+		Mode:     ports.DiscoveryBatch,
+	}
 }
 
 func adzunaKeywordSlotSize() int {
@@ -101,9 +107,6 @@ func (a *AdzunaAdapter) buildURL(keyword string, req domain.ScrapeRequest, page 
 }
 
 func (a *AdzunaAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
-	a.semaphore <- struct{}{}
-	defer func() { <-a.semaphore }()
-
 	return a.searchKeyword(ctx, keyword, req)
 }
 
@@ -121,50 +124,25 @@ func (a *AdzunaAdapter) SearchBatch(ctx context.Context, keywords []string, req 
 		)
 	}
 
-	type searchResult struct {
-		jobs []domain.Job
-		err  error
-	}
-
-	results := make(chan searchResult, len(slot))
-	var wg sync.WaitGroup
-
+	var allJobs []domain.Job
+	var firstErr error
 	for _, keyword := range slot {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 		keyword = strings.TrimSpace(keyword)
 		if keyword == "" {
 			continue
 		}
 
-		wg.Add(1)
-		go func(keyword string) {
-			defer wg.Done()
-
-			select {
-			case a.semaphore <- struct{}{}:
-				defer func() { <-a.semaphore }()
-			case <-ctx.Done():
-				results <- searchResult{err: ctx.Err()}
-				return
-			}
-
-			jobs, err := a.searchKeyword(ctx, keyword, req)
-			results <- searchResult{jobs: jobs, err: err}
-		}(keyword)
-	}
-
-	wg.Wait()
-	close(results)
-
-	var allJobs []domain.Job
-	var firstErr error
-	for result := range results {
-		if result.err != nil {
+		jobs, err := a.searchKeyword(ctx, keyword, req)
+		if err != nil {
 			if firstErr == nil {
-				firstErr = result.err
+				firstErr = err
 			}
 			continue
 		}
-		allJobs = append(allJobs, result.jobs...)
+		allJobs = append(allJobs, jobs...)
 	}
 	if len(allJobs) > 0 {
 		return allJobs, nil
@@ -245,11 +223,8 @@ func (a *AdzunaAdapter) searchKeyword(ctx context.Context, keyword string, req d
 		// Pausa obrigatória entre páginas.
 		// O semáforo limita QUANTAS keywords rodam juntas,
 		// e este sleep garante o respiro entre as PÁGINAS de cada keyword.
-		select {
-		case <-ctx.Done():
-			return allJobs, ctx.Err()
-		case <-time.After(waitDuration):
-			// Continua para a próxima página ou libera para a próxima keyword
+		if err := adapterutil.Wait(ctx, waitDuration); err != nil {
+			return nil, err
 		}
 	}
 
@@ -270,10 +245,8 @@ func (a *AdzunaAdapter) fetchPageWithRetry(ctx context.Context, endpoint, keywor
 			return nil, err
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * 1500 * time.Millisecond):
+		if err := adapterutil.Wait(ctx, time.Duration(attempt+1)*1500*time.Millisecond); err != nil {
+			return nil, err
 		}
 	}
 

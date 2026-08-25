@@ -49,7 +49,7 @@ func handleScrape(
 		ctx, cancel := context.WithTimeout(r.Context(), scrapeTimeout)
 		defer cancel()
 
-		searchConfig := searchConfigFromRequest(req, runtimeCfg.MaxConcurrency)
+		searchConfig := searchConfigFromRuntime(req, runtimeCfg)
 		slogScrapeStart("public_endpoint", runtimeCfg.MaxConcurrency, req.MaxConcurrency, searchConfig.MaxConcurrency, len(searchConfig.Keywords), len(adapterList))
 
 		start := time.Now()
@@ -85,20 +85,32 @@ func handleScrape(
 }
 
 func searchConfigFromRequest(req domain.ScrapeRequest, globalMaxConcurrency int) pipeline.SearchConfig {
+	return searchConfigFromRuntime(req, config.RuntimeConfig{
+		MaxConcurrency:         globalMaxConcurrency,
+		ProviderMaxConcurrency: min(config.DefaultProviderMaxConcurrency, globalMaxConcurrency),
+	})
+}
+
+func searchConfigFromRuntime(
+	req domain.ScrapeRequest,
+	runtimeCfg config.RuntimeConfig,
+) pipeline.SearchConfig {
 	return pipeline.SearchConfig{
-		Keywords:              req.Keywords,
-		SearchLocation:        req.SearchLocation,
-		SearchGeoID:           req.SearchGeoID,
-		SearchLanguage:        req.SearchLanguage,
-		JobTypes:              req.JobTypes,
-		TimeFilter:            req.TimeFilter,
-		RemoteOnly:            req.RemoteOnly,
-		Sources:               req.Sources,
-		ResultsPerPage:        req.ResultsPerPage,
-		MaxPagesPerKeyword:    req.MaxPagesPerKeyword,
-		WaitBetweenSearchesMs: req.WaitBetweenSearchesMs,
-		PageTimeoutMs:         req.PageTimeoutMs,
-		MaxConcurrency:        config.ResolveEffectiveConcurrency(req.MaxConcurrency, globalMaxConcurrency),
+		Keywords:                     req.Keywords,
+		SearchLocation:               req.SearchLocation,
+		SearchGeoID:                  req.SearchGeoID,
+		SearchLanguage:               req.SearchLanguage,
+		JobTypes:                     req.JobTypes,
+		TimeFilter:                   req.TimeFilter,
+		RemoteOnly:                   req.RemoteOnly,
+		Sources:                      req.Sources,
+		ResultsPerPage:               req.ResultsPerPage,
+		MaxPagesPerKeyword:           req.MaxPagesPerKeyword,
+		WaitBetweenSearchesMs:        req.WaitBetweenSearchesMs,
+		PageTimeoutMs:                req.PageTimeoutMs,
+		MaxConcurrency:               config.ResolveEffectiveConcurrency(req.MaxConcurrency, runtimeCfg.MaxConcurrency),
+		ProviderMaxConcurrency:       min(runtimeCfg.ProviderMaxConcurrency, config.ResolveEffectiveConcurrency(req.MaxConcurrency, runtimeCfg.MaxConcurrency)),
+		ProviderConcurrencyOverrides: runtimeCfg.ProviderConcurrencyOverrides,
 	}
 }
 
