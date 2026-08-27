@@ -14,12 +14,16 @@ import (
 )
 
 type schedulerTestAdapter struct {
+	name     string
 	provider ports.ProviderID
 	mode     ports.DiscoveryMode
 	search   func(context.Context, string) ([]domain.Job, error)
 }
 
 func (a schedulerTestAdapter) SourceName() string {
+	if a.name != "" {
+		return a.name
+	}
 	return string(a.provider)
 }
 
@@ -70,7 +74,7 @@ func TestProduceTasksUsesRoundRobinOrder(t *testing.T) {
 		queue,
 		adapters,
 		[]string{"go", "java", "python"},
-		newProviderRunStats(adapters),
+		newProviderRunStats(adapters, nil),
 	)
 
 	var order []string
@@ -113,7 +117,7 @@ func TestProduceTasksBalancesProvidersWithDifferentInstanceCounts(t *testing.T) 
 		queue,
 		adapters,
 		[]string{"go", "java", "python"},
-		newProviderRunStats(adapters),
+		newProviderRunStats(adapters, nil),
 	)
 
 	var order []ports.ProviderID
@@ -140,7 +144,7 @@ func TestProduceTasksAppliesBackpressureAtQueueCapacity(t *testing.T) {
 			queue,
 			adapters,
 			[]string{"go", "java", "python"},
-			newProviderRunStats(adapters),
+			newProviderRunStats(adapters, nil),
 		)
 		close(done)
 	}()
@@ -160,6 +164,36 @@ func TestProduceTasksAppliesBackpressureAtQueueCapacity(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("producer did not finish after queue consumers resumed")
+	}
+}
+
+func TestProduceTasksStopsWhenCanceledDuringBackpressure(t *testing.T) {
+	queue := make(chan adapterTask, 1)
+	done := make(chan struct{})
+	adapters := []ports.JobSource{schedulerTestAdapter{provider: ports.ProviderGupy}}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	go func() {
+		produceTasks(
+			ctx,
+			queue,
+			adapters,
+			[]string{"go", "java", "python", "rust", "node"},
+			newProviderRunStats(adapters, nil),
+		)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		return len(queue) == cap(queue)
+	}, time.Second, time.Millisecond)
+	cancel(assert.AnError)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("producer did not finish after cancellation during backpressure")
 	}
 }
 

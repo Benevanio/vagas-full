@@ -68,20 +68,26 @@ func runWithConcurrency(
 	queueCapacity := max(1, maxConcurrency*2)
 	tasks := make(chan adapterTask, queueCapacity)
 	results := make(chan result, queueCapacity)
-	runStats := newProviderRunStats(adapterList)
-	var wg sync.WaitGroup
+	runStats := newProviderRunStats(adapterList, budget)
 
-	go produceTasks(ctx, tasks, adapterList, req.Keywords, runStats)
+	var tasksWg sync.WaitGroup
+	tasksWg.Add(1 + maxConcurrency)
+	go func() {
+		defer tasksWg.Done()
+		produceTasks(ctx, tasks, adapterList, req.Keywords, runStats)
+	}()
 	for range maxConcurrency {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer tasksWg.Done()
 			runWorker(ctx, tasks, results, budget, runStats, req)
 		}()
 	}
 
+	var gatherWg sync.WaitGroup
+	gatherWg.Add(1)
 	go func() {
-		wg.Wait()
+		defer gatherWg.Done()
+		tasksWg.Wait()
 		close(results)
 	}()
 
@@ -91,6 +97,8 @@ func runWithConcurrency(
 			allJobs = append(allJobs, r.jobs...)
 		}
 	}
+	tasksWg.Wait()
+	gatherWg.Wait()
 	logProviderRunStats(runStats)
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, cause
@@ -298,7 +306,7 @@ func runScheduledTask(
 	timer := prometheus.NewTimer(metrics.ScrapeDurationSeconds.WithLabelValues(source))
 	jobs, err := runAdapterTask(ctx, task, req)
 	timer.ObserveDuration()
-	runStats.recordCompleted(task, err, time.Since(started))
+	runStats.recordCompleted(ctx, task, err, time.Since(started))
 
 	metrics.ScrapeRunsTotal.WithLabelValues(source).Inc()
 	if err != nil {
@@ -315,7 +323,7 @@ func runScheduledTask(
 
 func logProviderRunStats(runStats *providerRunStats) {
 	for _, summary := range runStats.snapshots() {
-		slog.Info("scraper provider execution summary",
+		attrs := []any{
 			"provider", summary.Provider,
 			"mode", summary.Mode,
 			"produced", summary.Produced,
@@ -323,8 +331,21 @@ func logProviderRunStats(runStats *providerRunStats) {
 			"cancelled", summary.Cancelled,
 			"errors", summary.Errors,
 			"timeouts", summary.Timeouts,
+			"max_concurrency_effective", summary.MaxConcurrencyEffective,
 			"duration", summary.Duration.Round(time.Millisecond),
-		)
+		}
+		if summary.StopCause != "" {
+			attrs = append(attrs, "stop_cause", summary.StopCause)
+		}
+		if sample := summary.ErrorSample; sample != nil {
+			attrs = append(attrs, slog.Group("error_sample",
+				"provider", sample.Provider,
+				"source", sample.Source,
+				"mode", sample.Mode,
+				"error", sample.Error,
+			))
+		}
+		slog.Info("scraper provider execution summary", attrs...)
 	}
 }
 

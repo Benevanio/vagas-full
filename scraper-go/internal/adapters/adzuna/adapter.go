@@ -220,9 +220,6 @@ func (a *AdzunaAdapter) searchKeyword(ctx context.Context, keyword string, req d
 
 		allJobs = append(allJobs, jobs...)
 
-		// Pausa obrigatória entre páginas.
-		// O semáforo limita QUANTAS keywords rodam juntas,
-		// e este sleep garante o respiro entre as PÁGINAS de cada keyword.
 		if err := adapterutil.Wait(ctx, waitDuration); err != nil {
 			return nil, err
 		}

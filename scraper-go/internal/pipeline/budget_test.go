@@ -147,6 +147,31 @@ func TestConcurrencyPermitReleaseIsIdempotent(t *testing.T) {
 	next.release()
 }
 
+func TestConcurrencyBudgetReleasesAfterSuccessErrorAndCancellation(t *testing.T) {
+	budget, err := newConcurrencyBudget(1, 1, nil)
+	require.NoError(t, err)
+
+	success, err := budget.acquire(context.Background(), ports.ProviderGupy)
+	require.NoError(t, err)
+	success.release()
+	assert.Equal(t, 0, budget.providerInUse(ports.ProviderGupy))
+	assert.Empty(t, budget.global)
+
+	failed, err := budget.acquire(context.Background(), ports.ProviderGupy)
+	require.NoError(t, err)
+	failed.release()
+	assert.Equal(t, 0, budget.providerInUse(ports.ProviderGupy))
+	assert.Empty(t, budget.global)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	held, err := budget.acquire(ctx, ports.ProviderGupy)
+	require.NoError(t, err)
+	cancel()
+	held.release()
+	assert.Equal(t, 0, budget.providerInUse(ports.ProviderGupy))
+	assert.Empty(t, budget.global)
+}
+
 func TestConcurrencyBudgetUsesGlobalAsEffectiveProviderMaximum(t *testing.T) {
 	budget, err := newConcurrencyBudget(2, 4, map[ports.ProviderID]int{
 		ports.ProviderLinkedIn: 3,
