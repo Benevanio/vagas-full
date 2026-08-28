@@ -91,6 +91,19 @@ func TestProviderRunStatsCountsCustomCancelCauseAsCancellation(t *testing.T) {
 	assert.Nil(t, snapshots[0].ErrorSample)
 }
 
+func TestOutcomeReasonPrefersCustomContextCauseOverGenericCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(runlock.ErrLost)
+
+	assert.Equal(t, runlock.ErrLost.Error(), outcomeReason(ctx, context.Canceled))
+}
+
+func TestOutcomeReasonPreservesProviderErrorWithoutCancellation(t *testing.T) {
+	providerErr := errors.New("provider unavailable")
+
+	assert.Equal(t, providerErr.Error(), outcomeReason(context.Background(), providerErr))
+}
+
 func TestProviderRunStatsKeepsFirstErrorSampleAndEffectiveLimit(t *testing.T) {
 	budget, err := newConcurrencyBudget(2, 4, map[ports.ProviderID]int{
 		ports.ProviderGreenhouse: 3,
