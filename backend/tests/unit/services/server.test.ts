@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createJobsApiApp: vi.fn(),
   logInfo: vi.fn(),
   logWarn: vi.fn(),
+  initErrorTracking: vi.fn(),
   swaggerServe: vi.fn(),
   swaggerSetup: vi.fn(() => vi.fn()),
 }));
@@ -27,6 +28,10 @@ vi.mock("../../../src/app.js", () => ({
 vi.mock("../../../src/logger.js", () => ({
   logInfo: mocks.logInfo,
   logWarn: mocks.logWarn,
+}));
+
+vi.mock("../../../src/errorTracking.js", () => ({
+  initErrorTracking: mocks.initErrorTracking,
 }));
 
 vi.mock("swagger-ui-express", () => ({
@@ -64,6 +69,7 @@ describe("server entry", () => {
     await importServerEntry();
 
     expect(mocks.createJobsApiApp).toHaveBeenCalledTimes(1);
+    expect(mocks.initErrorTracking).toHaveBeenCalledTimes(1);
     expect(mocks.set).toHaveBeenCalledWith("trust proxy", 1);
     expect(mocks.listen).toHaveBeenCalled();
     expect(mocks.listen.mock.calls[0][0]).toBe(3100);

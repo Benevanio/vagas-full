@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { AppError } from "../lib/errors";
+import { captureException } from "../errorTracking";
+import { logError } from "../logger";
 
 function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
@@ -8,7 +10,7 @@ function isProduction(): boolean {
 
 export function errorHandler(
   error: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
@@ -32,6 +34,17 @@ export function errorHandler(
   const details = isProduction()
     ? undefined
     : { cause: error.message || "unknown" };
+  logError("Erro inesperado na requisição.", {
+    err: error,
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl ?? req.path,
+  });
+  captureException(error, {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.path,
+  });
   const appError = AppError.internal("Erro interno.", details);
   res.status(appError.statusCode).json(appError.toJSON());
 }

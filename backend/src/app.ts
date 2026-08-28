@@ -1,5 +1,7 @@
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
+import { pool } from "./db/client";
+import { cachePing } from "./lib/cache";
 import { register } from "./metrics/metrics";
 import { corsOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/errorHandler";
@@ -58,6 +60,20 @@ export function createJobsApiApp() {
    *         description: API funcionando
    */
   app.get("/health", (_req, res) => res.json({ ok: true }));
+
+  app.get("/ready", async (_req, res, next) => {
+    try {
+      const checks = await Promise.allSettled([
+        pool.query("SELECT 1"),
+        cachePing(),
+      ]);
+      const ready = checks.every((check) => check.status === "fulfilled");
+
+      res.status(ready ? 200 : 503).json({ ok: ready });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get("/metrics", async (_req, res) => {
     res.set("Content-Type", register.contentType);

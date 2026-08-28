@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { AppError } from "../../../src/lib/errors";
+
+const mocks = vi.hoisted(() => ({
+  logError: vi.fn(),
+  captureException: vi.fn(),
+}));
+
+vi.mock("../../../src/logger", () => ({
+  logError: mocks.logError,
+}));
+
+vi.mock("../../../src/errorTracking", () => ({
+  captureException: mocks.captureException,
+}));
+
 import { errorHandler } from "../../../src/middleware/errorHandler";
 
 function createRes() {
@@ -10,6 +24,38 @@ function createRes() {
 }
 
 describe("errorHandler", () => {
+  it("registra erro inesperado com contexto da requisição", () => {
+    const { res } = createRes();
+    const error = new Error("falha inesperada");
+
+    errorHandler(
+      error,
+      {
+        requestId: "request-123",
+        method: "POST",
+        originalUrl: "/auth/login",
+        path: "/auth/login",
+      } as any,
+      res,
+      vi.fn(),
+    );
+
+    expect(mocks.logError).toHaveBeenCalledWith(
+      "Erro inesperado na requisição.",
+      expect.objectContaining({
+        err: error,
+        requestId: "request-123",
+        method: "POST",
+        path: "/auth/login",
+      }),
+    );
+    expect(mocks.captureException).toHaveBeenCalledWith(error, {
+      requestId: "request-123",
+      method: "POST",
+      path: "/auth/login",
+    });
+  });
+
   it("retorna FORBIDDEN para erro de CORS", () => {
     const { status, json, res } = createRes();
 

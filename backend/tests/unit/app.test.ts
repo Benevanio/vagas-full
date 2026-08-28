@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   cacheAbsoluteSMembers: vi.fn(),
   cacheGetJobsByIds: vi.fn(),
   getCache: vi.fn(),
+  cachePing: vi.fn(),
+  poolQuery: vi.fn(),
   publish: vi.fn(),
   logWarn: vi.fn(),
   parsePagination: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock("../../src/lib/cache.js", () => ({
   cacheAbsoluteSMembers: mocks.cacheAbsoluteSMembers,
   cacheGetJobsByIds: mocks.cacheGetJobsByIds,
   getCache: mocks.getCache,
+  cachePing: mocks.cachePing,
 }));
 
 vi.mock("../../src/lib/kwsync.js", () => ({
@@ -39,6 +42,7 @@ vi.mock("../../src/lib/pagination.js", () => ({
 }));
 
 vi.mock("../../src/db/client.js", () => ({
+  pool: { query: mocks.poolQuery },
   db: {
     select: () => ({
       from: () => ({
@@ -148,6 +152,8 @@ describe("jobsApiApp", () => {
     mocks.getUserById.mockResolvedValue(null);
     mocks.createHighMatchIfMissing.mockResolvedValue(undefined);
     mocks.getCache.mockResolvedValue({ lPush: vi.fn() });
+    mocks.cachePing.mockResolvedValue("PONG");
+    mocks.poolQuery.mockResolvedValue({ rows: [{ "?column?": 1 }] });
     mocks.publish.mockResolvedValue(undefined);
   });
 
@@ -157,6 +163,23 @@ describe("jobsApiApp", () => {
     const app = createJobsApiApp();
     const res = await request(app).get("/health").expect(200);
     expect(res.body).toEqual({ ok: true });
+  });
+
+  it("GET /ready confirma banco e Valkey disponíveis", async () => {
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(200);
+
+    expect(res.body).toEqual({ ok: true });
+    expect(mocks.poolQuery).toHaveBeenCalledWith("SELECT 1");
+    expect(mocks.cachePing).toHaveBeenCalledOnce();
+  });
+
+  it("GET /ready retorna indisponível quando uma dependência falha", async () => {
+    mocks.cachePing.mockRejectedValueOnce(new Error("Valkey indisponível"));
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(503);
+
+    expect(res.body).toEqual({ ok: false });
   });
 
   // ── CORS ──────────────────────────────────────────────────────────────
