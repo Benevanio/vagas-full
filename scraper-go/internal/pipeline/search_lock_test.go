@@ -43,6 +43,13 @@ func (a *searchLockAdapter) SourceName() string {
 	return "search-lock"
 }
 
+func (a *searchLockAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderLinkedIn,
+		Mode:     ports.DiscoveryBatch,
+	}
+}
+
 func (a *searchLockAdapter) Search(context.Context, string, domain.ScrapeRequest) ([]domain.Job, error) {
 	panic("batch path expected")
 }

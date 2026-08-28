@@ -18,13 +18,13 @@ import (
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters/adapterutil"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 )
 
 const (
 	gupyDefaultBaseURL    = "https://employability-portal.gupy.io/api/v1/jobs"
 	gupyDefaultPageLimit  = 100
 	gupyDefaultMaxOffset  = 10000
-	gupyDefaultBatchSize  = 4
 	gupyDefaultQueryLimit = 60
 )
 
@@ -33,7 +33,6 @@ type GupyAdapter struct {
 	baseURL         string
 	pageLimit       int
 	maxOffset       int
-	batchSize       int
 	mu              sync.Mutex
 	nextQueryOffset int
 }
@@ -83,12 +82,18 @@ func NewGupy() *GupyAdapter {
 		baseURL:   gupyDefaultBaseURL,
 		pageLimit: gupyDefaultPageLimit,
 		maxOffset: gupyDefaultMaxOffset,
-		batchSize: gupyDefaultBatchSize,
 	}
 }
 
 func (a *GupyAdapter) SourceName() string {
 	return "Gupy"
+}
+
+func (a *GupyAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderGupy,
+		Mode:     ports.DiscoveryBatch,
+	}
 }
 
 func (a *GupyAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
@@ -121,8 +126,14 @@ func (a *GupyAdapter) SearchBatch(ctx context.Context, keywords []string, req do
 	collected := make(map[string]collectedJob)
 	order := make([]string, 0)
 	for _, query := range queries {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 		rawJobs, err := a.fetchAll(ctx, query, req)
 		if err != nil {
+			if cause := context.Cause(ctx); cause != nil {
+				return nil, cause
+			}
 			slog.Warn("gupy: query ignorada por erro",
 				"query", query,
 				"error", err,
@@ -223,57 +234,20 @@ func (a *GupyAdapter) fetchAll(ctx context.Context, keyword string, req domain.S
 		maxOffset = gupyDefaultMaxOffset
 	}
 
-	batchSize := a.batchSize
-	if batchSize <= 0 {
-		batchSize = gupyDefaultBatchSize
-	}
-
 	all := make([]gupyJob, 0, limit)
-	for base := 0; base <= maxOffset; base += limit * batchSize {
-		offsets := make([]int, 0, batchSize)
-		for i := 0; i < batchSize; i++ {
-			offset := base + i*limit
-			if offset > maxOffset {
+	for offset := 0; offset <= maxOffset; offset += limit {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+		page, err := a.fetchPageWithRetry(ctx, keyword, offset, limit, req)
+		if err != nil {
+			if gupyIsFullSweepEnd(err, keyword, offset) {
 				break
 			}
-			offsets = append(offsets, offset)
+			return nil, err
 		}
-		if len(offsets) == 0 {
-			break
-		}
-
-		pages := make([][]gupyJob, len(offsets))
-		errs := make([]error, len(offsets))
-
-		var wg sync.WaitGroup
-		for i, offset := range offsets {
-			wg.Add(1)
-			go func(i, offset int) {
-				defer wg.Done()
-				page, err := a.fetchPageWithRetry(ctx, keyword, offset, limit, req)
-				pages[i] = page
-				errs[i] = err
-			}(i, offset)
-		}
-		wg.Wait()
-
-		stop := false
-		for i, page := range pages {
-			if errs[i] != nil {
-				if gupyIsFullSweepEnd(errs[i], keyword, offsets[i]) {
-					stop = true
-					break
-				}
-				return nil, errs[i]
-			}
-			all = append(all, page...)
-			if len(page) < limit {
-				stop = true
-				break
-			}
-		}
-
-		if stop {
+		all = append(all, page...)
+		if len(page) < limit {
 			break
 		}
 	}
