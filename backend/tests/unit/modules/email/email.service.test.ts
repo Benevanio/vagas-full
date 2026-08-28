@@ -117,4 +117,22 @@ describe("EmailService", () => {
       });
     });
   });
+
+  describe("sendEmailChangeConfirmation", () => {
+    it("usa o template centralizado e inclui o token na URL do frontend", async () => {
+      await service.sendEmailChangeConfirmation({
+        email: "novo@example.com",
+        token: "token-seguro",
+      });
+
+      expect(queueMocks.enqueueEmail).toHaveBeenCalledWith({
+        template: "emailChangeConfirmation",
+        to: "novo@example.com",
+        data: {
+          confirmationUrl:
+            "https://painelvagas.com/confirmar-email?token=token-seguro",
+        },
+      });
+    });
+  });
 });

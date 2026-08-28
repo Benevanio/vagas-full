@@ -1,5 +1,6 @@
 import type { SearchPreferences, UserProfile } from "../../types";
 import { ConnectionsForm } from "./ConnectionsForm";
+import { EmailChangeForm } from "./EmailChangeForm";
 import { PreferencesForm } from "./PreferencesForm";
 import { ProfileForm } from "./ProfileForm";
 
@@ -32,6 +33,7 @@ export function ProfileTab({
         isSaving={isSavingProfile}
         onSave={onSaveProfile}
       />
+      <EmailChangeForm currentEmail={userProfile.email} />
       <PreferencesForm
         searchPreferences={searchPreferences}
         setSearchPreferences={setSearchPreferences}

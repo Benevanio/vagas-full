@@ -25,10 +25,22 @@ const mockCredentialsService = vi.hoisted(() => ({
   findById: vi.fn(), // ← fix: adicionado
 }));
 
+const mockEmailChangeService = vi.hoisted(() => ({
+  confirm: vi.fn(),
+}));
+
 vi.mock("../../../src/modules/auth/credentials.service", () => ({
   CredentialsService: class {
     constructor() {
       return mockCredentialsService;
+    }
+  },
+}));
+
+vi.mock("../../../src/modules/users/emailChange.service", () => ({
+  EmailChangeService: class {
+    constructor() {
+      return mockEmailChangeService;
     }
   },
 }));
@@ -124,8 +136,27 @@ describe("Integration - Auth Routes", () => {
     });
 
     mockCredentialsService.findById.mockResolvedValue(fixtureUser);
+    mockEmailChangeService.confirm.mockResolvedValue(undefined);
 
     app = createJobsApiApp();
+  });
+
+  describe("POST /email-change/confirm", () => {
+    it("confirma a troca sem exigir sessão", async () => {
+      await request(app)
+        .post(`${BASE}/email-change/confirm`)
+        .send({ token: "token-seguro" })
+        .expect(204);
+
+      expect(mockEmailChangeService.confirm).toHaveBeenCalledWith("token-seguro");
+    });
+
+    it("retorna 400 para token ausente", async () => {
+      await request(app)
+        .post(`${BASE}/email-change/confirm`)
+        .send({})
+        .expect(400);
+    });
   });
 
   // ── GET /:provider/url ────────────────────────────────────────────────────

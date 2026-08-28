@@ -57,6 +57,24 @@ export class EmailService {
       data: { name, appUrl: frontendUrl },
     });
   }
+
+  async sendEmailChangeConfirmation({
+    email,
+    token,
+  }: {
+    email: string;
+    token: string;
+  }): Promise<void> {
+    const { frontendUrl } = getConfig();
+    const confirmationUrl = new URL("/confirmar-email", frontendUrl);
+    confirmationUrl.searchParams.set("token", token);
+
+    await this.send({
+      template: "emailChangeConfirmation",
+      to: email,
+      data: { confirmationUrl: confirmationUrl.toString() },
+    });
+  }
 }
 
 /**
