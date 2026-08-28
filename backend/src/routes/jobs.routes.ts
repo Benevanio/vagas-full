@@ -5,7 +5,7 @@ export const jobsRoutes = Router();
 
 /**
  * @swagger
- * /api/jobs/search:
+ * /jobs/search:
  * get:
  * summary: Busca vagas em memória RAM no Valkey usando índices invertidos e interseção
  * tags: [Jobs]
