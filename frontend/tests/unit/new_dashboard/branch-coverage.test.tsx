@@ -122,7 +122,7 @@ describe("new_dashboard branch coverage", () => {
     });
   });
 
-  it("cobre fallback do header sem usuário e menus vazios", () => {
+  it("exibe estados vazios do header sem dados reais", () => {
     renderWithRouter(<Header />);
 
     expect(screen.getByLabelText("Mensagens")).toBeInTheDocument();
@@ -132,13 +132,11 @@ describe("new_dashboard branch coverage", () => {
 
     fireEvent.click(screen.getByLabelText("Mensagens"));
     expect(screen.getByText(/lidas/i)).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma mensagem recente.")).toBeInTheDocument();
+    expect(screen.queryByText("Julio Silva (Mentor)")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Julio Silva (Mentor)"));
-    expect(
-      screen.getByRole("heading", { name: "Julio Silva (Mentor)" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Mentoria")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Fechar" })).toHaveLength(2);
+    fireEvent.click(screen.getByLabelText("Notificações"));
+    expect(screen.getByText("Nenhuma notificação recente.")).toBeInTheDocument();
   });
 
   it("carrega feeds reais, limpa alertas e abre menus do header autenticado", async () => {

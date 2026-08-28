@@ -2,7 +2,6 @@ import { useAuth } from "@/domains/auth/application/AuthContext";
 import { Bell, ChevronDown, Mail } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { initialMessages, initialNotifications } from "../../constants";
 import {
   clearDashboardNotifications,
   getDashboardNotificationFeed,
@@ -30,9 +29,9 @@ export function Header({
   title,
   userProfile,
   userInitials,
-  unreadNotifications = 1,
-  messages = initialMessages,
-  notifications = initialNotifications,
+  unreadNotifications = 0,
+  messages = [],
+  notifications = [],
 }: HeaderProps) {
   const location = useLocation();
   const navigate = useNavigate();
