@@ -12,7 +12,9 @@ import { userRoleEnum, users } from "./users";
 
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
-  actorId: uuid("actor_id").references(() => users.id),
+  actorId: uuid("actor_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
   actorRole: userRoleEnum("actor_role").notNull(),
   action: varchar("action", { length: 100 }).notNull(),
   targetType: text("target_type"),

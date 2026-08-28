@@ -4,9 +4,13 @@ import { AppError } from "../../lib/errors";
 import { sessionOptions } from "../../lib/session";
 import { Session } from "../types/auth.types";
 import { UsersService } from "./users.service";
+import { PrivacyService } from "./privacy.service";
 
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly privacyService = new PrivacyService(),
+  ) {}
 
   private async getSession(req: Request, res: Response) {
     return getIronSession<Session>(req, res, sessionOptions);
@@ -62,5 +66,20 @@ export class UsersController {
       req.body,
     );
     return res.json(updated);
+  }
+
+  async exportData(req: Request, res: Response) {
+    const userId = await this.requireUserId(req, res);
+    const data = await this.privacyService.exportUserData(userId);
+    res.attachment("meus-dados.json");
+    return res.json(data);
+  }
+
+  async deleteAccount(req: Request, res: Response) {
+    const userId = await this.requireUserId(req, res);
+    await this.privacyService.deleteAccount(userId);
+    const session = await this.getSession(req, res);
+    await session.destroy();
+    return res.status(204).send();
   }
 }
