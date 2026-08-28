@@ -165,6 +165,9 @@ func classifyTaskOutcome(ctx context.Context, err error) taskOutcome {
 }
 
 func outcomeReason(ctx context.Context, err error) string {
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+		return cause.Error()
+	}
 	if err != nil {
 		return err.Error()
 	}
