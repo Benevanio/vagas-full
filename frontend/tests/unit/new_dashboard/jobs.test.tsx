@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AddJobModal } from "@/domains/new_dashboard/components/jobs/AddJobModal";
 import { JobDetailModal } from "@/domains/new_dashboard/components/jobs/JobDetailModal";
 import { JobFilter } from "@/domains/new_dashboard/components/jobs/JobFilter";
@@ -14,6 +14,14 @@ import type {
   ContinentFilter,
   CountryFilter,
 } from "@/domains/new_dashboard/utils/locationFilters";
+
+const dashboardApiMock = vi.hoisted(() => ({
+  getDashboardSavedJobEvents: vi.fn(),
+}));
+
+vi.mock("@/domains/new_dashboard/infrastructure/dashboardJobsApi", () => ({
+  getDashboardSavedJobEvents: dashboardApiMock.getDashboardSavedJobEvents,
+}));
 
 const baseJob: Job = {
   id: "job-1",
@@ -48,6 +56,118 @@ function makeJobs(count: number): Job[] {
 }
 
 describe("new_dashboard job components", () => {
+  beforeEach(() => {
+    dashboardApiMock.getDashboardSavedJobEvents.mockReset();
+  });
+
+  it("exibe a timeline em ordem cronológica e atualiza após mudar o status", async () => {
+    dashboardApiMock.getDashboardSavedJobEvents
+      .mockResolvedValueOnce([
+        {
+          id: "event-2",
+          type: "status_changed",
+          fromStatus: "applied",
+          toStatus: "interviewing",
+          metadata: null,
+          createdAt: "2026-07-11T12:00:00.000Z",
+        },
+        {
+          id: "event-1",
+          type: "status_changed",
+          fromStatus: "saved",
+          toStatus: "applied",
+          metadata: { source: "dashboard" },
+          createdAt: "2026-07-10T12:00:00.000Z",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "event-3",
+          type: "status_changed",
+          fromStatus: "interviewing",
+          toStatus: "accepted",
+          metadata: null,
+          createdAt: "2026-07-12T12:00:00.000Z",
+        },
+      ]);
+
+    const view = render(
+      <JobDetailModal
+        job={baseJob}
+        onClose={vi.fn()}
+        onStatusChange={vi.fn()}
+        onNotesChange={vi.fn()}
+        isTracked
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/status alterado de salva para candidatura enviada/i),
+      ).toBeInTheDocument();
+    });
+
+    const entries = screen.getAllByRole("listitem");
+    expect(entries[0]).toHaveTextContent(/salva para candidatura enviada/i);
+    expect(entries[1]).toHaveTextContent(
+      /candidatura enviada para em entrevista/i,
+    );
+    expect(entries[0]).toHaveTextContent("source: dashboard");
+
+    view.rerender(
+      <JobDetailModal
+        job={{ ...baseJob, status: "accepted" }}
+        onClose={vi.fn()}
+        onStatusChange={vi.fn()}
+        onNotesChange={vi.fn()}
+        isTracked
+        timelineVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/em entrevista para proposta aceita/i),
+      ).toBeInTheDocument();
+    });
+    expect(dashboardApiMock.getDashboardSavedJobEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it("mostra estados vazio e de erro da timeline", async () => {
+    dashboardApiMock.getDashboardSavedJobEvents.mockResolvedValueOnce([]);
+    const view = render(
+      <JobDetailModal
+        job={baseJob}
+        onClose={vi.fn()}
+        onStatusChange={vi.fn()}
+        onNotesChange={vi.fn()}
+        isTracked
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/nenhuma mudança de status registrada/i)).toBeInTheDocument();
+    });
+
+    dashboardApiMock.getDashboardSavedJobEvents.mockRejectedValueOnce(
+      new Error("falha"),
+    );
+    view.rerender(
+      <JobDetailModal
+        job={baseJob}
+        onClose={vi.fn()}
+        onStatusChange={vi.fn()}
+        onNotesChange={vi.fn()}
+        isTracked
+        timelineVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/não foi possível carregar o histórico/i)).toBeInTheDocument();
+    });
+  });
+
   it("atualiza os filtros da busca", () => {
     const setSearchQuery = vi.fn();
     const setFilterType = vi.fn();

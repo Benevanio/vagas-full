@@ -1,6 +1,8 @@
 import { ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
 import { jobStatusClasses, jobStatuses } from "../../constants";
-import type { Job, JobStatus } from "../../types";
+import type { Job, JobStatus, JobTimelineEvent } from "../../types";
+import { getDashboardSavedJobEvents } from "../../infrastructure/dashboardJobsApi";
 import { Modal } from "../shared/Modal";
 import { FormattedJobDescription } from "./FormattedJobDescription";
 
@@ -9,6 +11,8 @@ interface JobDetailModalProps {
   onClose: () => void;
   onStatusChange: (jobId: string, status: JobStatus) => void;
   onNotesChange: (jobId: string, notes: string) => void;
+  isTracked?: boolean;
+  timelineVersion?: number;
 }
 
 const payloadLabels: Record<string, string> = {
@@ -44,12 +48,69 @@ function isExternalUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
+function formatTimelineDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data não informada";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function orderTimeline(events: JobTimelineEvent[]) {
+  return [...events].sort(
+    (first, second) =>
+      new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
+  );
+}
+
+function timelineMetadataText(metadata: Record<string, unknown> | null) {
+  if (!metadata) return "";
+
+  return Object.entries(metadata)
+    .map(([key, value]) => `${key}: ${payloadValueToText(value)}`)
+    .join(" • ");
+}
+
 export function JobDetailModal({
   job,
   onClose,
   onStatusChange,
   onNotesChange,
+  isTracked = false,
+  timelineVersion = 0,
 }: JobDetailModalProps) {
+  const [timeline, setTimeline] = useState<JobTimelineEvent[]>([]);
+  const [isTimelineLoading, setIsTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState(false);
+
+  useEffect(() => {
+    if (!isTracked) return;
+
+    let active = true;
+    void Promise.resolve()
+      .then(() => {
+        if (!active) return null;
+        setIsTimelineLoading(true);
+        setTimelineError(false);
+        return getDashboardSavedJobEvents(job.id);
+      })
+      .then((events) => {
+        if (active && events) setTimeline(orderTimeline(events));
+      })
+      .catch(() => {
+        if (active) setTimelineError(true);
+      })
+      .finally(() => {
+        if (active) setIsTimelineLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isTracked, job.id, timelineVersion]);
+
   const payloadEntries = Object.entries(job.rawPayload ?? {}).filter(
     ([key]) => key !== "description",
   );
@@ -199,6 +260,51 @@ export function JobDetailModal({
             className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
           />
         </label>
+
+        {isTracked ? (
+          <section className="space-y-2" aria-labelledby="timeline-title">
+            <h3
+              id="timeline-title"
+              className="text-xs font-bold uppercase text-muted-foreground"
+            >
+              Histórico da candidatura
+            </h3>
+            {isTimelineLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando histórico...</p>
+            ) : null}
+            {timelineError ? (
+              <p className="text-sm text-destructive">
+                Não foi possível carregar o histórico.
+              </p>
+            ) : null}
+            {!isTimelineLoading && !timelineError && timeline.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma mudança de status registrada.
+              </p>
+            ) : null}
+            {!isTimelineLoading && !timelineError && timeline.length > 0 ? (
+              <ol className="space-y-2 border-l border-border pl-4">
+                {timeline.map((event) => (
+                  <li key={event.id} className="relative text-sm">
+                    <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-primary" />
+                    <p className="font-semibold">
+                      Status alterado de {jobStatuses[event.fromStatus]} para{" "}
+                      {jobStatuses[event.toStatus]}
+                    </p>
+                    <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
+                      {formatTimelineDate(event.createdAt)}
+                    </time>
+                    {timelineMetadataText(event.metadata) ? (
+                      <p className="text-xs text-muted-foreground">
+                        {timelineMetadataText(event.metadata)}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </section>
+        ) : null}
       </div>
     </Modal>
   );
