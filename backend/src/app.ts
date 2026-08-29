@@ -61,16 +61,6 @@ export function createJobsApiApp() {
   app.use("/admin", withSession, adminRoutes);
   app.use("/admin", withSession, superAdminRoutes);
 
-  /**
-   * @swagger
-   * /health:
-   *   get:
-   *     summary: Verifica se a API está online
-   *     tags: [System]
-   *     responses:
-   *       200:
-   *         description: API funcionando
-   */
   const healthHandler = (_req: Request, res: Response) => res.json({ ok: true });
   app.get("/api/v1/health", healthHandler);
   app.get("/health", healthHandler);
