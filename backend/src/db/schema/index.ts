@@ -7,4 +7,5 @@ export * from "./permissionRules";
 export * from "./savedJobs";
 export * from "./userNotifications";
 export * from "./userPreferences";
+export * from "./userSessions";
 export * from "./users";

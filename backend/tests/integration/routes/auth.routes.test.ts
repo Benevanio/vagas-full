@@ -33,6 +33,22 @@ vi.mock("../../../src/modules/auth/credentials.service", () => ({
   },
 }));
 
+const mockSessionService = vi.hoisted(() => ({
+  create: vi.fn(),
+  isActive: vi.fn(),
+  list: vi.fn(),
+  revoke: vi.fn(),
+  revokeOthers: vi.fn(),
+}));
+
+vi.mock("../../../src/modules/auth/session.service", () => ({
+  SessionService: class {
+    constructor() {
+      return mockSessionService;
+    }
+  },
+}));
+
 // ── iron-session ──────────────────────────────────────────────────────────────
 // AuthController chama getIronSession diretamente.
 // CredentialsController usa req.session injetado pelo withSession middleware.
@@ -124,6 +140,8 @@ describe("Integration - Auth Routes", () => {
     });
 
     mockCredentialsService.findById.mockResolvedValue(fixtureUser);
+    mockSessionService.create.mockResolvedValue({ id: "session-1" });
+    mockSessionService.isActive.mockResolvedValue(true);
 
     app = createJobsApiApp();
   });

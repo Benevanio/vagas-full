@@ -8,6 +8,7 @@ describe("AuthController", () => {
   let reqMock: Partial<Request>;
   let resMock: Partial<Response>;
   let sessionMock: any;
+  let sessionsMock: any;
 
   beforeEach(() => {
     vi.stubEnv("SESSION_SECRET", "um-password-longo-com-mais-de-32-caracteres");
@@ -23,13 +24,15 @@ describe("AuthController", () => {
       }),
     };
 
-    authController = new AuthController(authServiceMock);
+    sessionsMock = { create: vi.fn().mockResolvedValue({ id: "session_123" }) };
+    authController = new AuthController(authServiceMock, sessionsMock);
 
     sessionMock = {
       save: vi.fn().mockResolvedValue(undefined),
       oauth_state: undefined,
       userId: undefined,
       role: undefined,
+      sessionId: undefined,
     };
 
     reqMock = {
