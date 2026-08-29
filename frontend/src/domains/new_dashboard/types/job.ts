@@ -52,6 +52,14 @@ export type JobType = z.infer<typeof JobTypeSchema>;
 export type JobLevel = z.infer<typeof JobLevelSchema>;
 export type Job = z.infer<typeof JobSchema>;
 export type NewJob = z.infer<typeof NewJobSchema>;
+export type JobTimelineEvent = {
+  id: string;
+  type: "status_changed";
+  fromStatus: JobStatus;
+  toStatus: JobStatus;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+};
 export type MatchSort = "default" | "desc" | "asc";
 export type JobModelFilter =
   | "Todos"

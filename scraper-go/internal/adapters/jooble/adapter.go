@@ -15,6 +15,7 @@ import (
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters/adapterutil"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -44,6 +45,13 @@ func NewJooble(apiKey string, rdb *redis.Client) *JoobleAdapter {
 }
 
 func (a *JoobleAdapter) SourceName() string { return "Jooble" }
+
+func (a *JoobleAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderJooble,
+		Mode:     ports.DiscoveryBatch,
+	}
+}
 
 // quotaRemaining retorna quantas chamadas ainda cabem hoje.
 // Se Valkey estiver indisponível, segue com o limite local para não zerar o adapter silenciosamente.

@@ -19,24 +19,28 @@ import (
 )
 
 type Config struct {
-	Interval       time.Duration
-	ScrapeTimeout  time.Duration
-	SearchLocation string
-	JobTypes       string
-	TimeFilter     string
-	RemoteOnly     bool
-	MaxConcurrency int
+	Interval                     time.Duration
+	ScrapeTimeout                time.Duration
+	SearchLocation               string
+	JobTypes                     string
+	TimeFilter                   string
+	RemoteOnly                   bool
+	MaxConcurrency               int
+	ProviderMaxConcurrency       int
+	ProviderConcurrencyOverrides map[ports.ProviderID]int
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Interval:       3 * time.Hour,
-		ScrapeTimeout:  40 * time.Minute,
-		SearchLocation: "Brasil",
-		JobTypes:       "C,F",
-		TimeFilter:     "r604800",
-		RemoteOnly:     false,
-		MaxConcurrency: config.DefaultMaxConcurrency,
+		Interval:                     3 * time.Hour,
+		ScrapeTimeout:                40 * time.Minute,
+		SearchLocation:               "Brasil",
+		JobTypes:                     "C,F",
+		TimeFilter:                   "r604800",
+		RemoteOnly:                   false,
+		MaxConcurrency:               config.DefaultMaxConcurrency,
+		ProviderMaxConcurrency:       config.DefaultProviderMaxConcurrency,
+		ProviderConcurrencyOverrides: make(map[ports.ProviderID]int),
 	}
 }
 
@@ -241,6 +245,7 @@ func (s *Scheduler) runWithLease(lease *runlock.Lease) (runErr error) {
 		"run_id", lease.RunID(),
 		"max_concurrency_configured", s.cfg.MaxConcurrency,
 		"max_concurrency_effective", config.MaxConcurrency,
+		"provider_max_concurrency", config.ProviderMaxConcurrency,
 		"keywords", len(kws),
 		"adapters", len(s.adapterList),
 	)
@@ -288,12 +293,14 @@ func (s *Scheduler) runWithLease(lease *runlock.Lease) (runErr error) {
 
 func (s *Scheduler) searchConfig(kws []string) pipeline.SearchConfig {
 	return pipeline.SearchConfig{
-		Keywords:       kws,
-		SearchLocation: s.cfg.SearchLocation,
-		JobTypes:       s.cfg.JobTypes,
-		TimeFilter:     s.cfg.TimeFilter,
-		RemoteOnly:     s.cfg.RemoteOnly,
-		MaxConcurrency: s.cfg.MaxConcurrency,
+		Keywords:                     kws,
+		SearchLocation:               s.cfg.SearchLocation,
+		JobTypes:                     s.cfg.JobTypes,
+		TimeFilter:                   s.cfg.TimeFilter,
+		RemoteOnly:                   s.cfg.RemoteOnly,
+		MaxConcurrency:               s.cfg.MaxConcurrency,
+		ProviderMaxConcurrency:       s.cfg.ProviderMaxConcurrency,
+		ProviderConcurrencyOverrides: s.cfg.ProviderConcurrencyOverrides,
 	}
 }
 

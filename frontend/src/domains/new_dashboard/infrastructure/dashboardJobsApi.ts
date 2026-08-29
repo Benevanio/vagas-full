@@ -4,6 +4,7 @@ import type {
   Job,
   JobLevel,
   JobStatus,
+  JobTimelineEvent,
   JobType,
   MatchSort,
   NewJob,
@@ -54,8 +55,18 @@ const ApiSavedJobSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+const ApiSavedJobEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("status_changed"),
+  fromStatus: z.enum(["saved", "applied", "interviewing", "rejected", "accepted"]),
+  toStatus: z.enum(["saved", "applied", "interviewing", "rejected", "accepted"]),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  createdAt: z.string(),
+});
+
 type ApiSearchJob = z.infer<typeof ApiSearchJobSchema>;
 type ApiSavedJob = z.infer<typeof ApiSavedJobSchema>;
+type ApiSavedJobEvent = z.infer<typeof ApiSavedJobEventSchema>;
 type SearchJobsResponse = z.infer<typeof SearchJobsResponseSchema>;
 
 export type SearchJobFilters = {
@@ -279,6 +290,13 @@ export function toDashboardSavedJob(job: ApiSavedJob): Job {
   };
 }
 
+function toDashboardSavedJobEvent(event: ApiSavedJobEvent): JobTimelineEvent {
+  return {
+    ...event,
+    metadata: event.metadata ?? null,
+  };
+}
+
 function toSearchJobsResult(
   response: SearchJobsResponse,
   page: number,
@@ -353,6 +371,11 @@ function savedJobPayload(job: Job | NewJob, status: JobStatus = "saved") {
 export async function getDashboardSavedJobs() {
   const { data } = await api.get("/saved-jobs");
   return z.array(ApiSavedJobSchema).parse(data).map(toDashboardSavedJob);
+}
+
+export async function getDashboardSavedJobEvents(id: string) {
+  const { data } = await api.get(`/saved-jobs/${id}/events`);
+  return z.array(ApiSavedJobEventSchema).parse(data).map(toDashboardSavedJobEvent);
 }
 
 export async function createDashboardSavedJob(

@@ -2,6 +2,7 @@ package gupy
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,7 +19,6 @@ func TestGupySearchMapsRemoteJobs(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.URL.String() != "https://example.test/jobs?jobName=Data+Analyst&limit=100&offset=0&workplaceType=remote" {
 			t.Fatalf("unexpected endpoint: %s", req.URL.String())
@@ -97,7 +97,6 @@ func TestGupySearchPaginatesUntilShortPage(t *testing.T) {
 	adapter.baseURL = "https://example.test/jobs"
 	adapter.pageLimit = 2
 	adapter.maxOffset = 10
-	adapter.batchSize = 1
 
 	var (
 		mu      sync.Mutex
@@ -140,6 +139,42 @@ func TestGupySearchPaginatesUntilShortPage(t *testing.T) {
 	}
 }
 
+func TestGupySearchStopsPaginationAfterCancellation(t *testing.T) {
+	t.Setenv("GUPY_RAW_DISCOVERY_ENABLED", "false")
+	t.Setenv("GUPY_FULL_SWEEP_ENABLED", "false")
+	t.Setenv("GUPY_FULL_REMOTE_SWEEP_ENABLED", "false")
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("run lock lost")
+	calls := 0
+	adapter := NewGupy()
+	adapter.baseURL = "https://example.test/jobs"
+	adapter.pageLimit = 1
+	adapter.maxOffset = 5
+	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
+		calls++
+		cancel(cause)
+		return testResponse(`{
+			"data": [{
+				"id": 1,
+				"name": "Go Developer",
+				"careerPageName": "Acme",
+				"jobUrl": "https://acme.gupy.io/jobs/1",
+				"description": "Go backend"
+			}]
+		}`), nil
+	})
+
+	_, err := adapter.Search(ctx, "go", domain.ScrapeRequest{})
+
+	if !errors.Is(err, cause) {
+		t.Fatalf("expected cancellation cause, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected no request after cancellation, got %d calls", calls)
+	}
+}
+
 func TestGupySearchAcceptsIsRemoteWorkFlagAndCareerPageURLFallback(t *testing.T) {
 	t.Setenv("GUPY_RAW_DISCOVERY_ENABLED", "false")
 	t.Setenv("GUPY_FULL_SWEEP_ENABLED", "false")
@@ -147,7 +182,6 @@ func TestGupySearchAcceptsIsRemoteWorkFlagAndCareerPageURLFallback(t *testing.T)
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		return testResponse(`{"data":[{
 			"id": "abc",
@@ -184,7 +218,6 @@ func TestGupySearchHandlesNonOKStatus(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusTooManyRequests,
@@ -209,7 +242,6 @@ func TestGupySearchBatchExpandsPortugueseTechnologyQueries(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 
 	seenQueries := make(map[string]bool)
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -266,7 +298,6 @@ func TestGupySearchBatchAddsRawDiscoveryQueries(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 
 	seenQueries := make(map[string]bool)
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -308,7 +339,6 @@ func TestGupySearchBatchAddsFullRemoteSweep(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 
 	var sawFullSweep bool
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -351,7 +381,6 @@ func TestGupySearchBatchRejectsAdministrativeJobsFromFullSweep(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Query().Get("jobName") != "" {
@@ -441,7 +470,6 @@ func TestGupySearchBatchAddsFullSweepForAllModalities(t *testing.T) {
 
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
-	adapter.batchSize = 1
 
 	var sawFullSweep bool
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -488,7 +516,6 @@ func TestGupyFullSweepKeepsCollectedJobsWhenHighOffsetReturnsBadRequest(t *testi
 	adapter := NewGupy()
 	adapter.baseURL = "https://example.test/jobs"
 	adapter.pageLimit = 100
-	adapter.batchSize = 1
 	adapter.maxOffset = 10100
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Query().Get("jobName") != "" {
