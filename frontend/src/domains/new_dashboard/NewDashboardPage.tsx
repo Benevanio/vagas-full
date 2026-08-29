@@ -163,6 +163,7 @@ export default function NewDashboardPage() {
   const [countryFilter, setCountryFilter] = useState<CountryFilter>("Todos");
   const [matchSort, setMatchSort] = useState<MatchSort>("default");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [timelineVersion, setTimelineVersion] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -357,6 +358,7 @@ export default function NewDashboardPage() {
       const updatedJob = await changeJobStatus(jobId, status);
       if (updatedJob && selectedJobId === jobId) {
         setSelectedJobId(updatedJob.id);
+        setTimelineVersion((current) => current + 1);
       }
       showToast(`Vaga atualizada para: ${jobStatuses[status]}`);
     } catch {
@@ -572,6 +574,8 @@ export default function NewDashboardPage() {
           onClose={handleCloseJob}
           onStatusChange={handleStatusChange}
           onNotesChange={handleNotesChange}
+          isTracked={trackedJobs.some((job) => job.id === selectedJob.id)}
+          timelineVersion={timelineVersion}
         />
       ) : null}
 

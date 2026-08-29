@@ -39,6 +39,10 @@ vi.mock("@/domains/new_dashboard/hooks/useDashboardJobs", () => ({
   useDashboardJobs: () => mockUseDashboardJobs(),
 }));
 
+vi.mock("@/domains/new_dashboard/infrastructure/dashboardJobsApi", () => ({
+  getDashboardSavedJobEvents: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/domains/new_dashboard/infrastructure/notificationsApi", () => ({
   getDashboardNotificationFeed: vi.fn().mockResolvedValue({
     messages: [],
