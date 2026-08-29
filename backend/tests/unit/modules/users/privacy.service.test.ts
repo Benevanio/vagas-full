@@ -12,6 +12,7 @@ import { PrivacyService } from "../../../../src/modules/users/privacy.service";
 
 function makeDatabase() {
   const select = vi.fn();
+  const update = vi.fn();
   const remove = vi.fn();
 
   return {
@@ -20,6 +21,7 @@ function makeDatabase() {
       userPreferences: { findFirst: vi.fn() },
     },
     select,
+    update,
     delete: remove,
   };
 }
@@ -87,12 +89,23 @@ describe("PrivacyService", () => {
   });
 
   it("exclui a conta e retorna not found quando ela não existe", async () => {
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    database.update.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: updateWhere }),
+    });
     const returning = vi.fn().mockResolvedValueOnce([{ id: "user-1" }]).mockResolvedValueOnce([]);
     database.delete.mockReturnValue({
       where: vi.fn().mockReturnValue({ returning }),
     });
 
     await expect(service.deleteAccount("user-1")).resolves.toBeUndefined();
+    expect(updateWhere).toHaveBeenCalledOnce();
+    expect(database.update.mock.results[0].value.set).toHaveBeenCalledWith({
+      actorId: null,
+      targetId: null,
+      metadata: null,
+      ip: null,
+    });
     await expect(service.deleteAccount("inexistente")).rejects.toMatchObject({
       code: "NOT_FOUND",
       statusCode: 404,

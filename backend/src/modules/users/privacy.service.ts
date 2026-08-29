@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
   accounts,
   applicationEvents,
+  auditLogs,
   keywords,
   savedJobs,
   userNotifications,
@@ -76,6 +77,16 @@ export class PrivacyService {
   }
 
   async deleteAccount(userId: string): Promise<void> {
+    await this.database
+      .update(auditLogs)
+      .set({
+        actorId: null,
+        targetId: null,
+        metadata: null,
+        ip: null,
+      })
+      .where(or(eq(auditLogs.actorId, userId), eq(auditLogs.targetId, userId)));
+
     const [deleted] = await this.database
       .delete(users)
       .where(eq(users.id, userId))

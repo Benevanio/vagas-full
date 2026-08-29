@@ -413,7 +413,7 @@ Usuários autenticados podem exportar seus dados em `GET /users/export` e solici
 
 A exportação inclui perfil, preferências, vagas salvas, eventos de candidatura, notificações, keywords e provedores conectados. Senhas, hashes, tokens de acesso e valores internos de criptografia não são incluídos.
 
-A exclusão remove a conta e os registros relacionados por chaves com `ON DELETE CASCADE`; o cookie de sessão também é invalidado. Logs de auditoria são preservados sem vínculo ao usuário excluído.
+A exclusão remove a conta e os registros relacionados por chaves com `ON DELETE CASCADE`; o cookie de sessão também é invalidado. Logs de auditoria são preservados apenas para fins operacionais, sem `actor_id`, `target_id`, metadados ou IP que possam vincular o registro ao usuário excluído.
 
 Arquivos de exemplo:
 
