@@ -63,9 +63,24 @@ export function createJobsApiApp() {
 
   app.get("/ready", async (_req, res, next) => {
     try {
+      const readinessTimeoutMs = 2_000;
+      const withTimeout = <T>(promise: Promise<T>): Promise<T> => {
+        let timeout: ReturnType<typeof setTimeout>;
+        const timeoutPromise = new Promise<T>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Readiness check timed out")),
+            readinessTimeoutMs,
+          );
+        });
+
+        return Promise.race([promise, timeoutPromise]).finally(() =>
+          clearTimeout(timeout),
+        );
+      };
+
       const checks = await Promise.allSettled([
-        pool.query("SELECT 1"),
-        cachePing(),
+        withTimeout(pool.query("SELECT 1")),
+        withTimeout(cachePing()),
       ]);
       const ready = checks.every((check) => check.status === "fulfilled");
 

@@ -182,6 +182,15 @@ describe("jobsApiApp", () => {
     expect(res.body).toEqual({ ok: false });
   });
 
+  it("GET /ready retorna indisponível quando uma dependência fica pendurada", async () => {
+    mocks.poolQuery.mockImplementationOnce(() => new Promise(() => {}));
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false });
+  }, 4_000);
+
   // ── CORS ──────────────────────────────────────────────────────────────
 
   it("permite CORS para origem autorizada", async () => {
