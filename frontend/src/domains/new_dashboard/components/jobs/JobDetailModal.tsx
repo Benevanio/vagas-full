@@ -5,12 +5,13 @@ import type { Job, JobStatus, JobTimelineEvent } from "../../types";
 import { getDashboardSavedJobEvents } from "../../infrastructure/dashboardJobsApi";
 import { Modal } from "../shared/Modal";
 import { FormattedJobDescription } from "./FormattedJobDescription";
+import { ApplicationNotesSection } from "./ApplicationNotesSection";
 
 interface JobDetailModalProps {
   job: Job;
   onClose: () => void;
   onStatusChange: (jobId: string, status: JobStatus) => void;
-  onNotesChange: (jobId: string, notes: string) => void;
+  onNotesChange?: (jobId: string, notes: string) => void;
   isTracked?: boolean;
   timelineVersion?: number;
 }
@@ -252,14 +253,10 @@ export function JobDetailModal({
           </select>
         </label>
 
-        <label className="space-y-2 block">
+        {isTracked ? <ApplicationNotesSection savedJobId={job.id} /> : <label className="space-y-2 block">
           <span className="text-xs font-bold uppercase text-muted-foreground">Notas</span>
-          <textarea
-            value={job.notes}
-            onChange={(event) => onNotesChange(job.id, event.target.value)}
-            className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-          />
-        </label>
+          <textarea aria-label="Notas" value={job.notes} onChange={(event) => onNotesChange?.(job.id, event.target.value)} className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm" />
+        </label>}
 
         {isTracked ? (
           <section className="space-y-2" aria-labelledby="timeline-title">
