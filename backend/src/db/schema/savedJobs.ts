@@ -19,7 +19,7 @@ export const savedJobs = pgTable("saved_jobs", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
 
-  jobLink: text("job_link").notNull(),
+  jobLink: text("job_link"),
   jobTitle: text("job_title"),
   company: text("company"),
   location: text("location"),

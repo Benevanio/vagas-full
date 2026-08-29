@@ -32,10 +32,12 @@ export class SavedJobsService {
     userId: string,
     data: Omit<NewSavedJob, "userId">,
   ): Promise<SavedJob> {
-    const existing = await this.tx.query.savedJobs.findFirst({
-      where: (j, { and, eq }) =>
-        and(ownedBy(userId, j.userId), eq(j.jobLink, data.jobLink)),
-    });
+    const existing = data.jobLink
+      ? await this.tx.query.savedJobs.findFirst({
+          where: (j, { and, eq }) =>
+            and(ownedBy(userId, j.userId), eq(j.jobLink, data.jobLink)),
+        })
+      : undefined;
 
     if (existing) {
       throw AppError.conflict("Vaga já salva.");
@@ -45,6 +47,14 @@ export class SavedJobsService {
       .insert(savedJobs)
       .values({ ...data, userId })
       .returning();
+    await this.tx.insert(applicationEvents).values({
+      userId,
+      savedJobId: result[0].id,
+      type: "status_changed",
+      fromStatus: "saved",
+      toStatus: result[0].status,
+      metadata: { event: "application_created", source: data.source ?? "Manual" },
+    });
     await new NotificationsService(this.tx).createForSavedJob(userId, result[0]);
     return result[0];
   }

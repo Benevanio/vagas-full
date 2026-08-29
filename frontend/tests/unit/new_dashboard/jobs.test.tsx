@@ -542,6 +542,9 @@ describe("new_dashboard job components", () => {
     fireEvent.change(screen.getByPlaceholderText(/linkedin, gupy/i), {
       target: { value: "Gupy" },
     });
+    fireEvent.change(screen.getByLabelText(/data da candidatura/i), {
+      target: { value: "2026-08-29" },
+    });
     fireEvent.change(screen.getByPlaceholderText(/https:\/\/\.\.\./i), {
       target: { value: "https://example.com/new" },
     });
@@ -560,6 +563,7 @@ describe("new_dashboard job components", () => {
         source: "Gupy",
         jobLink: "https://example.com/new",
         notes: "Observações",
+        appliedAt: "2026-08-29",
       }),
     );
     expect(onClose).toHaveBeenCalledTimes(1);

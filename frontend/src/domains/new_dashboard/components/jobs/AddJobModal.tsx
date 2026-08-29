@@ -14,6 +14,7 @@ const initialForm: NewJob = {
   source: "Manual",
   jobLink: "",
   notes: "",
+  appliedAt: "",
 };
 
 interface AddJobModalProps {
@@ -81,6 +82,10 @@ export function AddJobModal({ onClose, onAddJob }: AddJobModalProps) {
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring"
               placeholder="Desenvolvedor Frontend"
             />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-bold uppercase text-muted-foreground">Data da candidatura</span>
+            <input type="date" value={form.appliedAt ?? ""} onChange={(event) => updateField("appliedAt", event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring" />
           </label>
           <label className="space-y-1.5">
             <span className="text-xs font-bold uppercase text-muted-foreground">Empresa</span>
@@ -156,7 +161,7 @@ export function AddJobModal({ onClose, onAddJob }: AddJobModalProps) {
             />
           </label>
           <label className="space-y-1.5">
-            <span className="text-xs font-bold uppercase text-muted-foreground">Link</span>
+            <span className="text-xs font-bold uppercase text-muted-foreground">Link (opcional)</span>
             <input
               value={form.jobLink}
               onChange={(event) => updateField("jobLink", event.target.value)}

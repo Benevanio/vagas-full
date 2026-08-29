@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const createSavedJobSchema = z.object({
-  jobLink: z.string().url(),
+  jobLink: z.string().url().optional(),
   jobTitle: z.string().optional(),
   company: z.string().optional(),
   location: z.string().optional(),

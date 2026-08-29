@@ -28,9 +28,10 @@ export const JobSchema = z.object({
   tags: z.array(z.string()),
   posted: z.string().min(1),
   status: JobStatusSchema,
-  jobLink: z.string().min(1),
+  jobLink: z.string(),
   source: z.string().min(1),
   notes: z.string(),
+  appliedAt: z.string().optional(),
   rawPayload: z.record(z.string(), z.unknown()).optional(),
 });
 

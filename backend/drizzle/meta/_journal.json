@@ -99,6 +99,13 @@
       "when": 1786569164248,
       "tag": "0013_chunky_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788030798138,
+      "tag": "0014_red_betty_ross",
+      "breakpoints": true
     }
   ]
 }
