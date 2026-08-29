@@ -139,6 +139,55 @@ describe("new_dashboard branch coverage", () => {
     expect(screen.getByText("Nenhuma notificação recente.")).toBeInTheDocument();
   });
 
+  it("limpa os feeds quando a API falha e mantém os estados vazios", async () => {
+    mockUseAuth.mockReturnValue({
+      user: { email: "ana@exemplo.com" },
+      logout: vi.fn(),
+    });
+    vi.mocked(getDashboardNotificationFeed).mockRejectedValue(
+      new Error("API indisponível"),
+    );
+
+    renderWithRouter(
+      <Header
+        messages={[
+          {
+            id: "legacy-message",
+            sender: "Julio Silva (Mentor)",
+            text: "Mensagem de seed",
+            date: "11:15",
+            origin: "mentor",
+          },
+        ]}
+        notifications={[
+          {
+            id: "legacy-notification",
+            text: "Vaga compatível encontrada: Desenvolvedor React na TechCorp.",
+            type: "match",
+            date: "Há 1 dia",
+          },
+        ]}
+        unreadNotifications={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("Julio Silva (Mentor)")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Mensagens"));
+    expect(screen.getByText("Nenhuma mensagem recente.")).toBeInTheDocument();
+    expect(screen.queryByText("Julio Silva (Mentor)")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Notificações"));
+    expect(screen.getByText("Nenhuma notificação recente.")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Vaga compatível encontrada: Desenvolvedor React na TechCorp.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("carrega feeds reais, limpa alertas e abre menus do header autenticado", async () => {
     const logout = vi.fn();
     mockUseAuth.mockReturnValue({

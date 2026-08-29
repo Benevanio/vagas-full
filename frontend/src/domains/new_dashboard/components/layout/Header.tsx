@@ -116,7 +116,10 @@ export function Header({
       });
       setUnreadCount(notificationsResult.unreadCount);
     } catch {
-      // Mantém os dados de fallback até a API estar disponível.
+      setMenuMessages([]);
+      setMenuNotifications([]);
+      setUnreadMessagesCount(0);
+      setUnreadCount(0);
     }
   }, [user]);
 
