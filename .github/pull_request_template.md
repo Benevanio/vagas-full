@@ -1,47 +1,112 @@
-## Card
+## Linear
 
-- [PAV-XXX](https://linear.app/)
+Issue: PAV-___
 
-## Objetivo e escopo
+## Branch flow
 
-- Qual problema esta PR resolve?
-- O que permanece fora do escopo?
+- [ ] Este PR é uma feature/fix/chore destinada a `develop`.
+- [ ] Este PR não contém alteração direta ou fluxo indevido para `master`.
+- [ ] A branch foi criada a partir da base prevista pelo fluxo do projeto.
 
-## O que foi feito
+## Objetivo
 
-- Alteração 1
-- Alteração 2
+Descreva objetivamente o problema resolvido por esta PR.
 
-## Módulos afetados
+## Escopo
 
-- `caminho/do/arquivo`
-- Módulo ou serviço afetado
+O que faz parte desta entrega:
 
-## Validação
+-
 
-- [ ] Comandos executados e resultados registrados.
-- [ ] Testes relevantes adicionados ou atualizados.
-- [ ] Validação manual realizada, quando aplicável.
+O que está fora do escopo:
 
-```text
-comando executado
-resultado
+-
+
+## Resumo das alterações
+
+-
+
+## Arquivos e módulos afetados
+
+-
+
+## Como testar
+
+```bash
+# comandos de validação
 ```
 
-## Riscos e rollback
+## Validation
 
-- Riscos conhecidos, compatibilidade, migrations ou dependências externas.
-- Como reverter a alteração, quando aplicável.
+- [ ] Lint executado
+- [ ] Testes relevantes executados
+- [ ] Coverage permanece dentro do mínimo do projeto
+- [ ] Build executado quando aplicável
+- [ ] Validação manual realizada quando aplicável
+- [ ] Documentação atualizada quando necessária
+
+## Impacto de banco / migration
+
+- [ ] Não altera schema nem migrations
+- [ ] Altera schema ou migrations
+
+Detalhes:
+
+## Impacto em contratos/API
+
+- [ ] Não altera contratos
+- [ ] Altera endpoint, payload, schema ou comportamento de API
+
+Detalhes:
+
+## Impacto de configuração / infraestrutura
+
+- [ ] Não altera configuração
+- [ ] Altera env, Docker, filas, cache, serviços ou infraestrutura
+
+Detalhes:
+
+## Impacto de segurança
+
+- [ ] Sem impacto relevante
+- [ ] Impacto de segurança avaliado
+
+Detalhes:
+
+## Impacto de dados pessoais / privacidade
+
+- [ ] Sem tratamento novo ou alteração de dados pessoais
+- [ ] Impacto avaliado
+
+Detalhes:
+
+## Compatibilidade / dependências
+
+- [ ] Não depende de outra task/PR
+- [ ] Existe dependência ou ordem de deploy/merge
+
+Detalhes:
 
 ## Evidências
 
-- Prints, logs, links de execução ou outra evidência relevante.
+Adicione logs, screenshots, links de execução ou outra evidência relevante.
 
-## Checklist
+## Riscos
 
-- [ ] Escopo limitado ao card.
-- [ ] Sem arquivos temporários ou gerados desnecessários.
-- [ ] Sem segredos ou tokens no código.
-- [ ] Documentação atualizada, quando necessária.
+-
 
-> Consulte o [guia de contribuição](../contribuition.md) para as regras completas.
+## Rollback
+
+Descreva como a alteração pode ser revertida com segurança.
+
+## Checklist final
+
+- [ ] Escopo limitado ao card
+- [ ] Não inclui segredos, `.env`, certificados ou tokens
+- [ ] Não inclui arquivos temporários, builds, caches ou artefatos desnecessários
+- [ ] Não executa deploy como efeito desta PR
+- [ ] Critérios de aceite do card foram conferidos individualmente
+- [ ] Alterações de contrato possuem testes e documentação correspondentes
+- [ ] Alterações em banco/migrations foram validadas quando aplicável
+
+> Consulte o guia de contribuição do projeto para as regras completas.
