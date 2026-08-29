@@ -76,11 +76,12 @@ export class EmailChangeService {
         tokenHash,
         expiresAt: new Date(now.getTime() + TOKEN_TTL_MS),
       });
-    });
 
-    await this.mailer.sendEmailChangeConfirmation({
-      email: normalizedEmail,
-      token,
+      await this.mailer.sendEmailChangeConfirmation({
+        email: normalizedEmail,
+        token,
+        required: true,
+      });
     });
   }
 

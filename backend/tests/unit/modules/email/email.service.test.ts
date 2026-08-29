@@ -101,6 +101,17 @@ describe("EmailService", () => {
 
       expect(loggerMocks.logError).toHaveBeenCalled();
     });
+
+    it("propaga falha do enqueue quando o envio é obrigatório", async () => {
+      queueMocks.enqueueEmail.mockRejectedValue(new Error("valkey down"));
+
+      await expect(
+        service.send(
+          { template: "welcome", to: "user@example.com", data: {} },
+          { throwOnEnqueueFailure: true },
+        ),
+      ).rejects.toThrow("valkey down");
+    });
   });
 
   describe("sendWelcome", () => {

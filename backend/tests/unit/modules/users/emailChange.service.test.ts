@@ -86,6 +86,22 @@ describe("EmailChangeService", () => {
     });
   });
 
+  it("propaga falha ao enfileirar a confirmaÃ§Ã£o", async () => {
+    const { database, tx } = createDatabase();
+    setUpdateChain(tx);
+    database.query.users.findFirst.mockResolvedValue(undefined);
+    database.query.credentials.findFirst.mockResolvedValue(undefined);
+    tx.query.emailChangeRequests.findFirst.mockResolvedValue(undefined);
+    mailer.sendEmailChangeConfirmation.mockRejectedValueOnce(
+      new Error("Valkey indisponÃ­vel"),
+    );
+    const service = new EmailChangeService(mailer as never, database as never);
+
+    await expect(service.request("user-1", "novo@example.com")).rejects.toThrow(
+      "Valkey indisponÃ­vel",
+    );
+  });
+
   it.each([undefined, { invalidatedAt: new Date() }, { expiresAt: new Date(0) }])(
     "rejeita token inválido ou expirado",
     async (request) => {
