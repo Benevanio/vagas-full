@@ -14,6 +14,7 @@
 [TESTING](TESTING.md) |
 [CONTRIBUTING](contribuition.md) |
 [ESCOPO](ESCOPO.md) |
+[SECURITY](SECURITY.md) |
 [Frontend](frontend/README.md) |
 [Frontend Architecture](frontend/ARCHITECTURE.md) |
 [Front Admin](front_admin/README.md)

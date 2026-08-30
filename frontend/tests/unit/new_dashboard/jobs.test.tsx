@@ -510,6 +510,22 @@ describe("new_dashboard job components", () => {
     expect(screen.getByText("Conteúdo preservado")).toBeInTheDocument();
   });
 
+  it("não propaga atributos ativos nem protocolos não permitidos", () => {
+    const { container } = render(
+      <FormattedJobDescription
+        description={[
+          '<a href="data:text/html,blocked">Link de dados</a>',
+          '<p onclick="alert(1)">Texto seguro</p>',
+          '<iframe src="https://example.com"></iframe>',
+        ].join("")}
+      />,
+    );
+
+    expect(screen.getByText("Link de dados").tagName).toBe("SPAN");
+    expect(screen.getByText("Texto seguro")).not.toHaveAttribute("onclick");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
+  });
+
   it("valida e salva uma vaga manual nova", () => {
     const onAddJob = vi.fn();
     const onClose = vi.fn();
