@@ -84,4 +84,20 @@ describe("connections routes", () => {
     expect(res.body.code).toBe("VALIDATION_ERROR");
     expect(mocks.disconnectProvider).not.toHaveBeenCalled();
   });
+
+  it("recusa provider não escalar antes de desconectar", async () => {
+    const controller = new ConnectionsController();
+
+    await expect(
+      controller.disconnect(
+        {
+          session: { userId: "user-A" },
+          params: { provider: ["google", "github"] },
+        } as any,
+        { json: vi.fn() } as any,
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    expect(mocks.disconnectProvider).not.toHaveBeenCalled();
+  });
 });
