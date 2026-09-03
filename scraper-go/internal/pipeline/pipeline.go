@@ -9,14 +9,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/classifier"
-	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/dedup"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
-	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/jobstore"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/metrics"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
@@ -36,7 +32,7 @@ type adapterTask struct {
 }
 
 func Run(ctx context.Context, adapterList []ports.JobSource, req domain.ScrapeRequest) ([]domain.Job, error) {
-	return runWithConcurrency(ctx, adapterList, req, 2, nil)
+	return runWithConcurrency(ctx, adapterList, req, 2, nil, defaultProcessConfig())
 }
 
 func runWithConcurrency(
@@ -45,6 +41,7 @@ func runWithConcurrency(
 	req domain.ScrapeRequest,
 	defaultProviderConcurrency int,
 	providerOverrides map[ports.ProviderID]int,
+	processCfg processConfig,
 ) ([]domain.Job, error) {
 	pipelineStart := time.Now()
 
@@ -68,6 +65,7 @@ func runWithConcurrency(
 	queueCapacity := max(1, maxConcurrency*2)
 	tasks := make(chan adapterTask, queueCapacity)
 	results := make(chan result, queueCapacity)
+	incoming := make(chan domain.Job, stageQueueCapacity(processCfg))
 	runStats := newProviderRunStats(adapterList, budget)
 
 	var tasksWg sync.WaitGroup
@@ -91,26 +89,50 @@ func runWithConcurrency(
 		close(results)
 	}()
 
-	var allJobs []domain.Job
+	var processWg sync.WaitGroup
+	var processed []domain.Job
+	var processErr error
+	processWg.Add(1)
+	go func() {
+		defer processWg.Done()
+		processed, _, processErr = processIncomingJobs(ctx, incoming, processCfg)
+	}()
+
+	var closeIncoming sync.Once
+	closeIncomingFn := func() {
+		closeIncoming.Do(func() { close(incoming) })
+	}
+	defer closeIncomingFn()
+
 	for r := range results {
-		if r.err == nil {
-			allJobs = append(allJobs, r.jobs...)
+		if r.err != nil {
+			continue
+		}
+		for _, job := range r.jobs {
+			if context.Cause(ctx) != nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case incoming <- job:
+			}
 		}
 	}
-	tasksWg.Wait()
+	closeIncomingFn()
+	processWg.Wait()
 	gatherWg.Wait()
 	logProviderRunStats(runStats)
+	if processErr != nil {
+		return nil, processErr
+	}
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, cause
 	}
 
-	deduped := dedup.DedupeJobs(allJobs)
-	classified := classifier.ClassifyJobs(deduped)
-
 	metrics.PipelineRunDuration.Observe(time.Since(pipelineStart).Seconds())
-	metrics.PipelineJobsTotal.Observe(float64(len(classified)))
+	metrics.PipelineJobsTotal.Observe(float64(len(processed)))
 
-	return classified, nil
+	return processed, nil
 }
 
 type taskCursor struct {
@@ -371,109 +393,6 @@ func runAdapterTask(ctx context.Context, t adapterTask, req domain.ScrapeRequest
 	}
 
 	return t.adapter.Search(ctx, keyword, req)
-}
-
-func IndexJobsInValkey(ctx context.Context, rdb *redis.Client, jobs []domain.Job, keywords []string) {
-	if rdb == nil || len(jobs) == 0 || ctx.Err() != nil {
-		return
-	}
-
-	const (
-		globalIndexKey = "scraper:jobs:index"
-		// 9 dias: cobre o intervalo semanal com margem
-		// As vagas individuais (scraper:job:<id>) também têm 9 dias,
-		// então index e dados expiram na mesma janela
-		indexTTL = 9 * 24 * time.Hour
-	)
-
-	// Monta os novos índices em chaves temporárias (sufixo :next)
-	// e só depois faz RENAME atômico — sem janela de vazio durante reindexação
-	type tempEntry struct {
-		tempKey  string
-		finalKey string
-		ids      []string
-	}
-
-	kwIndex := make(map[string][]string) // finalKey → []id
-
-	for _, job := range jobs {
-		if ctx.Err() != nil {
-			return
-		}
-		id := jobstore.StableID(&job)
-		if id == "" {
-			continue
-		}
-
-		// Índice global: permanente, sem TTL
-		rdb.SAdd(ctx, globalIndexKey, id)
-
-		searchText := keywordSearchText(job)
-
-		for _, kw := range keywords {
-			sanitizedKw := strings.ToLower(strings.TrimSpace(kw))
-			if sanitizedKw == "" {
-				continue
-			}
-
-			if keywordMatches(searchText, sanitizedKw) {
-				for _, alias := range keywordIndexAliases(sanitizedKw) {
-					fullKey := fmt.Sprintf("scraper:jobs:keyword:%s", alias)
-					kwIndex[fullKey] = append(kwIndex[fullKey], id)
-				}
-			}
-
-			for _, term := range keywordSubTerms(sanitizedKw) {
-				if term == "" {
-					continue
-				}
-				if containsTokenOrPhrase(searchText, term) {
-					termKey := fmt.Sprintf("scraper:jobs:keyword:%s", term)
-					kwIndex[termKey] = append(kwIndex[termKey], id)
-				}
-			}
-		}
-
-		for _, key := range structuredIndexKeys(job) {
-			kwIndex[key] = append(kwIndex[key], id)
-		}
-
-		for _, key := range classificationIndexKeys(job) {
-			kwIndex[key] = append(kwIndex[key], id)
-		}
-	}
-
-	// Publica os índices de keyword com RENAME atômico
-	// Fluxo: escreve em :next → RENAME :next → final → Expire no final
-	for finalKey, ids := range kwIndex {
-		if ctx.Err() != nil {
-			return
-		}
-		tempKey := finalKey + ":next"
-
-		pipe := rdb.Pipeline()
-		pipe.Del(ctx, tempKey) // limpa eventual :next anterior
-		for _, id := range ids {
-			pipe.SAdd(ctx, tempKey, id)
-		}
-		pipe.Expire(ctx, tempKey, indexTTL)
-		if _, err := pipe.Exec(ctx); err != nil {
-			slog.Warn("IndexJobsInValkey: erro ao preparar chave temporária",
-				"key", tempKey, "error", err)
-			continue
-		}
-
-		// RENAME é atômico: clientes nunca veem chave vazia
-		if err := rdb.Rename(ctx, tempKey, finalKey).Err(); err != nil {
-			slog.Warn("IndexJobsInValkey: erro no RENAME",
-				"from", tempKey, "to", finalKey, "error", err)
-		}
-	}
-
-	slog.Info("Valkey índice invertido atualizado",
-		"keywords_indexadas", len(kwIndex),
-		"total_vagas", len(jobs),
-	)
 }
 
 func classificationIndexKeys(job domain.Job) []string {

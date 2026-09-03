@@ -24,6 +24,9 @@ func TestLoadRuntimeConfigUsesDefaultWhenEnvMissing(t *testing.T) {
 	assert.Empty(t, cfg.ProviderConcurrencyOverrides)
 	assert.Equal(t, 120*time.Second, cfg.RunLockTTL)
 	assert.Equal(t, 30*time.Second, cfg.RunLockRenewInterval)
+	assert.Equal(t, 100, cfg.ClassificationBatchSize)
+	assert.Equal(t, 100, cfg.PersistBatchSize)
+	assert.Equal(t, 250, cfg.IndexBatchSize)
 }
 
 func TestLoadRuntimeConfigUsesEnvValue(t *testing.T) {
@@ -262,10 +265,47 @@ func TestDockerComposeUsesUnsetOnlyDefaultsForRunLock(t *testing.T) {
 	assert.Contains(t, compose, "SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES=${SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES-}")
 	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL-120s}")
 	assert.Contains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}")
+	assert.Contains(t, compose, "SCRAPER_CLASSIFICATION_BATCH_SIZE=${SCRAPER_CLASSIFICATION_BATCH_SIZE-100}")
+	assert.Contains(t, compose, "SCRAPER_PERSIST_BATCH_SIZE=${SCRAPER_PERSIST_BATCH_SIZE-100}")
+	assert.Contains(t, compose, "SCRAPER_INDEX_BATCH_SIZE=${SCRAPER_INDEX_BATCH_SIZE-250}")
+	assert.NotContains(t, compose, "SCRAPER_CLASSIFICATION_BATCH_SIZE=${SCRAPER_CLASSIFICATION_BATCH_SIZE:-100}")
+	assert.NotContains(t, compose, "SCRAPER_PERSIST_BATCH_SIZE=${SCRAPER_PERSIST_BATCH_SIZE:-100}")
+	assert.NotContains(t, compose, "SCRAPER_INDEX_BATCH_SIZE=${SCRAPER_INDEX_BATCH_SIZE:-250}")
 	assert.NotContains(t, compose, "SCRAPER_PROVIDER_MAX_CONCURRENCY=${SCRAPER_PROVIDER_MAX_CONCURRENCY:-2}")
 	assert.NotContains(t, compose, "INHIRE_DETAILS_CONCURRENCY")
 	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_TTL=${SCRAPER_RUN_LOCK_TTL:-120s}")
 	assert.NotContains(t, compose, "SCRAPER_RUN_LOCK_RENEW_INTERVAL=${SCRAPER_RUN_LOCK_RENEW_INTERVAL:-30s}")
+}
+
+func TestLoadRuntimeConfigRejectsInvalidBatchSizes(t *testing.T) {
+	t.Run("zero", func(t *testing.T) {
+		_, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+			if key == ScraperClassificationBatchSizeEnv {
+				return "0", true
+			}
+			return "", false
+		})
+		require.Error(t, err)
+	})
+	t.Run("above max", func(t *testing.T) {
+		_, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+			if key == ScraperIndexBatchSizeEnv {
+				return "99999", true
+			}
+			return "", false
+		})
+		require.Error(t, err)
+	})
+	t.Run("one is allowed", func(t *testing.T) {
+		cfg, err := LoadRuntimeConfigFromLookup(func(key string) (string, bool) {
+			if key == ScraperPersistBatchSizeEnv {
+				return "1", true
+			}
+			return "", false
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, cfg.PersistBatchSize)
+	})
 }
 
 func findMonorepoFile(t *testing.T, name string) (string, bool) {

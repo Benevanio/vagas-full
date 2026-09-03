@@ -232,6 +232,22 @@ O mecanismo é fail-closed: se o Valkey não confirmar a aquisição, nenhum ada
 
 O token proprietário nunca é gravado no estado operacional nem nos logs. Um `runId` independente identifica a execução para observabilidade sem expor a credencial usada pelos scripts de renovação e liberação.
 
+### Processamento em lotes após a coleta
+
+Depois da coleta, o pipeline processa vagas em etapas com filas limitadas:
+
+coleta → normalização → deduplicação → classificação → persistência → indexação.
+
+O catálogo de vagas coletadas vive no Valkey. Os documentos `scraper:job:{id}` são a fonte da verdade da execução; o PostgreSQL do backend permanece para usuários e `saved_jobs`. A indexação invertida (`scraper:jobs:keyword:*` e chaves estruturadas) só recebe IDs confirmados por `SaveBatch`.
+
+Persistência: um `MULTI/EXEC` por lote, com upsert. Em conflito pelo ID estável, atualizam-se descrição, URL, salário, datas, modalidade, localização, classificação, fontes e keywords; o ID não muda e campos vazios na nova coleta não apagam dados já persistidos. Falha no lote impede a indexação daquele lote. Retry limitado (3 tentativas) vale só para erros transitórios.
+
+Indexação: `SADD` incremental em pipelines de `SCRAPER_INDEX_BATCH_SIZE` vagas, sem substituir índices existentes via `RENAME`. Se a indexação falhar após o persist, `ReindexPersistedJobs` relê os documentos persistidos e reconstrói os índices, sem repetir a coleta externa.
+
+Deduplicação usa as chaves já existentes no domínio (identificador externo, `title|company|location` e URL canônica) em um mapa de chaves da execução. A janela pendente guarda vagas completas só até o lote de classificação; o restante da execução guarda apenas chaves compactas. Duplicatas tardias após o flush são contabilizadas e não voltam a ser persistidas.
+
+A capacidade da fila entre coleta e processamento é `2 * max(lotes)`, sem variável de ambiente extra.
+
 No Docker Compose de produção, o serviço `scraper-go` também define:
 
 - `GOMAXPROCS=2`: limita a quantidade de threads do Go executando código simultaneamente.
@@ -379,7 +395,7 @@ docker compose \
   config
 ```
 
-Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12`, `SCRAPER_PROVIDER_MAX_CONCURRENCY=2`, `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES=""`, `GOMAXPROCS=2`, `GOMEMLIMIT=1500MiB`, `cpus: 1.5` e `mem_limit: 2g`.
+Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12`, `SCRAPER_PROVIDER_MAX_CONCURRENCY=2`, `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES=""`, `SCRAPER_CLASSIFICATION_BATCH_SIZE=100`, `SCRAPER_PERSIST_BATCH_SIZE=100`, `SCRAPER_INDEX_BATCH_SIZE=250`, `GOMAXPROCS=2`, `GOMEMLIMIT=1500MiB`, `cpus: 1.5` e `mem_limit: 2g`.
 
 ## Variáveis de ambiente importantes
 
@@ -389,6 +405,9 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 - `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES` — lista opcional `provider=limite`, separada por vírgulas. Vazio significa nenhum override; entrada inválida, duplicada, desconhecida ou acima do teto global impede a inicialização.
 - `SCRAPER_RUN_LOCK_TTL` — duração do lock distribuído. Padrão: `120s`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_TTL-120s}` (mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`).
 - `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}`.
+- `SCRAPER_CLASSIFICATION_BATCH_SIZE` — tamanho do lote de classificação. Padrão: `100`. Mínimo `1`, máximo `1000`. Valor explícito inválido impede a inicialização.
+- `SCRAPER_PERSIST_BATCH_SIZE` — tamanho do lote de persistência no Valkey (`scraper:job:*`). Padrão: `100`. Mínimo `1`, máximo `1000`.
+- `SCRAPER_INDEX_BATCH_SIZE` — tamanho do lote de indexação invertida. Padrão: `250`. Mínimo `1`, máximo `2500`.
 - `GOMAXPROCS` — limite efetivo de threads executando código Go simultaneamente. Valor inicial no Compose: `2`.
 - `GOMEMLIMIT` — meta de memória do runtime/GC. Valor inicial no Compose: `1500MiB`; não substitui `mem_limit` do container.
 - `JOOBLE_API_KEY` — Jooble integration.

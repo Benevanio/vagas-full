@@ -111,3 +111,20 @@ func TestBuildCacheKeyDoesNotChangeForProviderConcurrencyLimits(t *testing.T) {
 		t.Fatalf("provider execution limits changed cache key: got %q want %q", got, want)
 	}
 }
+
+func TestBuildCacheKeyDoesNotChangeForBatchSizes(t *testing.T) {
+	base := SearchConfig{
+		Keywords:       []string{"go"},
+		SearchLocation: "Brasil",
+		MaxConcurrency: 12,
+	}
+	withBatches := base
+	withBatches.RunID = "run-1"
+	withBatches.ClassificationBatchSize = 10
+	withBatches.PersistBatchSize = 20
+	withBatches.IndexBatchSize = 30
+
+	if got, want := BuildCacheKey(withBatches), BuildCacheKey(base); got != want {
+		t.Fatalf("batch sizes changed cache key: got %q want %q", got, want)
+	}
+}

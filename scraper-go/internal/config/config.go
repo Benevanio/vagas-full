@@ -11,10 +11,16 @@ import (
 )
 
 const (
-	DefaultMaxConcurrency         = 12
-	DefaultProviderMaxConcurrency = 2
-	DefaultRunLockTTL             = 120 * time.Second
-	DefaultRunLockRenewInterval   = 30 * time.Second
+	DefaultMaxConcurrency          = 12
+	DefaultProviderMaxConcurrency  = 2
+	DefaultRunLockTTL              = 120 * time.Second
+	DefaultRunLockRenewInterval    = 30 * time.Second
+	DefaultClassificationBatchSize = 100
+	DefaultPersistBatchSize        = 100
+	DefaultIndexBatchSize          = 250
+	MaxClassificationBatchSize     = 1000
+	MaxPersistBatchSize            = 1000
+	MaxIndexBatchSize              = 2500
 
 	SourceEnvironment     = "environment"
 	SourceInternalDefault = "internal_default"
@@ -24,6 +30,9 @@ const (
 	ScraperProviderConcurrencyOverridesEnv = "SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES"
 	ScraperRunLockTTLEnv                   = "SCRAPER_RUN_LOCK_TTL"
 	ScraperRunLockRenewIntervalEnv         = "SCRAPER_RUN_LOCK_RENEW_INTERVAL"
+	ScraperClassificationBatchSizeEnv      = "SCRAPER_CLASSIFICATION_BATCH_SIZE"
+	ScraperPersistBatchSizeEnv             = "SCRAPER_PERSIST_BATCH_SIZE"
+	ScraperIndexBatchSizeEnv               = "SCRAPER_INDEX_BATCH_SIZE"
 )
 
 type RuntimeConfig struct {
@@ -34,6 +43,9 @@ type RuntimeConfig struct {
 	ProviderConcurrencyOverrides map[ports.ProviderID]int
 	RunLockTTL                   time.Duration
 	RunLockRenewInterval         time.Duration
+	ClassificationBatchSize      int
+	PersistBatchSize             int
+	IndexBatchSize               int
 }
 
 func LoadRuntimeConfig() (RuntimeConfig, error) {
@@ -49,6 +61,9 @@ func LoadRuntimeConfigFromLookup(lookup func(string) (string, bool)) (RuntimeCon
 		ProviderConcurrencyOverrides: make(map[ports.ProviderID]int),
 		RunLockTTL:                   DefaultRunLockTTL,
 		RunLockRenewInterval:         DefaultRunLockRenewInterval,
+		ClassificationBatchSize:      DefaultClassificationBatchSize,
+		PersistBatchSize:             DefaultPersistBatchSize,
+		IndexBatchSize:               DefaultIndexBatchSize,
 	}
 
 	if value, ok := lookup(ScraperMaxConcurrencyEnv); ok {
@@ -103,7 +118,55 @@ func LoadRuntimeConfigFromLookup(lookup func(string) (string, bool)) (RuntimeCon
 		)
 	}
 
+	cfg.ClassificationBatchSize, err = boundedPositiveIntFromLookup(
+		lookup,
+		ScraperClassificationBatchSizeEnv,
+		DefaultClassificationBatchSize,
+		MaxClassificationBatchSize,
+	)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	cfg.PersistBatchSize, err = boundedPositiveIntFromLookup(
+		lookup,
+		ScraperPersistBatchSizeEnv,
+		DefaultPersistBatchSize,
+		MaxPersistBatchSize,
+	)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	cfg.IndexBatchSize, err = boundedPositiveIntFromLookup(
+		lookup,
+		ScraperIndexBatchSizeEnv,
+		DefaultIndexBatchSize,
+		MaxIndexBatchSize,
+	)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+
 	return cfg, nil
+}
+
+func boundedPositiveIntFromLookup(
+	lookup func(string) (string, bool),
+	key string,
+	fallback int,
+	max int,
+) (int, error) {
+	value, ok := lookup(key)
+	if !ok {
+		return fallback, nil
+	}
+	parsed, err := positiveInt(key, value)
+	if err != nil {
+		return 0, err
+	}
+	if parsed > max {
+		return 0, fmt.Errorf("%s must not exceed %d", key, max)
+	}
+	return parsed, nil
 }
 
 func positiveInt(key, value string) (int, error) {

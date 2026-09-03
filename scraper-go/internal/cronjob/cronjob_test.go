@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/cache"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/config"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/jobstore"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/keywords"
@@ -91,8 +92,12 @@ func TestSchedulerSearchConfigReceivesGlobalMaxConcurrency(t *testing.T) {
 	}
 
 	scheduler := New(cfg, nil, nil, nil, nil, nil)
-	searchConfig := scheduler.searchConfig([]string{"go"})
+	searchConfig := scheduler.searchConfig([]string{"go"}, "run-test")
 
+	assert.Equal(t, "run-test", searchConfig.RunID)
+	assert.Equal(t, config.DefaultClassificationBatchSize, searchConfig.ClassificationBatchSize)
+	assert.Equal(t, config.DefaultPersistBatchSize, searchConfig.PersistBatchSize)
+	assert.Equal(t, config.DefaultIndexBatchSize, searchConfig.IndexBatchSize)
 	assert.Equal(t, 9, searchConfig.MaxConcurrency)
 	assert.Equal(t, 3, searchConfig.ProviderMaxConcurrency)
 	assert.Equal(t, 4, searchConfig.ProviderConcurrencyOverrides[ports.ProviderGupy])

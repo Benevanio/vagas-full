@@ -299,6 +299,7 @@ func TestRunUsesFixedWorkersWithoutExceedingConcurrency(t *testing.T) {
 			},
 			2,
 			nil,
+			defaultProcessConfig(),
 		)
 		done <- err
 	}()

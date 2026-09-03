@@ -66,15 +66,11 @@ func SearchJobs(
 		}()
 
 		runCtx := lease.Context()
+		config.RunID = lease.RunID()
 		jobs, err := ScrapeAllSources(runCtx, config, adapterList, rdb)
 		if err != nil {
 			return SearchResult{}, fmt.Errorf("pipeline.SearchJobs: scrape: %w", err)
 		}
-		if err := context.Cause(runCtx); err != nil {
-			return SearchResult{}, err
-		}
-
-		IndexJobsInValkey(runCtx, rdb, jobs, config.Keywords)
 		if err := context.Cause(runCtx); err != nil {
 			return SearchResult{}, err
 		}
