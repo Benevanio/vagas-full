@@ -14,6 +14,7 @@ vi.mock("@/shared/lib/apiClient", () => ({
 import {
   createDashboardSavedJob,
   deleteDashboardSavedJob,
+  getDashboardSavedJobEvents,
   getDashboardSavedJobs,
   searchDashboardJobs,
   toRecommendedJob,
@@ -377,6 +378,32 @@ it("mapeia entityId para jobId apenas quando entityType é job, e readAt para is
       status: "applied",
       notes: "nota",
     });
+  });
+
+  it("busca e tipa os eventos da vaga salva", async () => {
+    apiMock.get.mockResolvedValue({
+      data: [
+        {
+          id: "event-1",
+          type: "status_changed",
+          fromStatus: "saved",
+          toStatus: "applied",
+          metadata: { source: "dashboard" },
+          createdAt: "2026-07-10T12:00:00.000Z",
+        },
+      ],
+    });
+
+    const events = await getDashboardSavedJobEvents("saved-1");
+
+    expect(apiMock.get).toHaveBeenCalledWith("/saved-jobs/saved-1/events");
+    expect(events).toEqual([
+      expect.objectContaining({
+        fromStatus: "saved",
+        toStatus: "applied",
+        metadata: { source: "dashboard" },
+      }),
+    ]);
   });
 
   it("cria, atualiza e remove vagas salvas", async () => {

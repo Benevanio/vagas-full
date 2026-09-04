@@ -3,6 +3,8 @@ package pipeline
 import (
 	"strings"
 	"testing"
+
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 )
 
 func TestBuildCacheKeyNormalizesAndDeduplicatesKeywords(t *testing.T) {
@@ -90,5 +92,22 @@ func TestBuildCacheKeyUsesEffectiveMaxConcurrency(t *testing.T) {
 
 	if !strings.HasSuffix(key, ":12") {
 		t.Fatalf("expected cache key to contain effective max concurrency, got %q", key)
+	}
+}
+
+func TestBuildCacheKeyDoesNotChangeForProviderConcurrencyLimits(t *testing.T) {
+	base := SearchConfig{
+		Keywords:       []string{"go"},
+		SearchLocation: "Brasil",
+		MaxConcurrency: 12,
+	}
+	withProviderLimits := base
+	withProviderLimits.ProviderMaxConcurrency = 3
+	withProviderLimits.ProviderConcurrencyOverrides = map[ports.ProviderID]int{
+		ports.ProviderGupy: 5,
+	}
+
+	if got, want := BuildCacheKey(withProviderLimits), BuildCacheKey(base); got != want {
+		t.Fatalf("provider execution limits changed cache key: got %q want %q", got, want)
 	}
 }

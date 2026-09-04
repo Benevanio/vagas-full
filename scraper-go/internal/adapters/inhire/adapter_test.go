@@ -2,6 +2,7 @@ package inhire
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,7 +28,6 @@ func TestInHireSearchBatchFetchesTenantsAndMapsJobs(t *testing.T) {
 
 	adapter := NewInHire()
 	adapter.apiURL = "https://example.test/inhire"
-	adapter.concurrency = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.URL.String() != "https://example.test/inhire" {
 			t.Fatalf("unexpected endpoint: %s", req.URL.String())
@@ -122,7 +122,6 @@ func TestInHireSearchBatchRespectsRemoteOnly(t *testing.T) {
 
 	adapter := NewInHire()
 	adapter.apiURL = "https://example.test/inhire"
-	adapter.concurrency = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		return testResponse(`{
 			"tenantName": "Acme",
@@ -145,6 +144,35 @@ func TestInHireSearchBatchRespectsRemoteOnly(t *testing.T) {
 	}
 }
 
+func TestInHireSearchCatalogStopsBeforeNextTenantAfterCancellation(t *testing.T) {
+	tenantsFile := writeInHireTenantsFile(t, `[
+		{"slug":"acme","tenantName":"Acme"},
+		{"slug":"brq","tenantName":"BRQ"}
+	]`)
+	t.Setenv("INHIRE_TENANTS_FILE", tenantsFile)
+	t.Setenv("INHIRE_ENRICH_DETAILS", "false")
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("run lock lost")
+	calls := 0
+	adapter := NewInHire()
+	adapter.apiURL = "https://example.test/inhire"
+	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
+		calls++
+		cancel(cause)
+		return testResponse(`{"tenantName":"Acme","jobsPage":[]}`), nil
+	})
+
+	_, err := adapter.SearchCatalog(ctx, []string{"go"}, domain.ScrapeRequest{})
+
+	if !errors.Is(err, cause) {
+		t.Fatalf("expected cancellation cause, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected no request after cancellation, got %d calls", calls)
+	}
+}
+
 func TestInHireLoadTenantsHandlesMissingFile(t *testing.T) {
 	t.Setenv("INHIRE_TENANTS_FILE", filepath.Join(t.TempDir(), "missing.json"))
 	t.Setenv("INHIRE_ENRICH_DETAILS", "false")
@@ -164,14 +192,12 @@ func TestInHireSearchBatchEnrichesAmbiguousJobsWithDetails(t *testing.T) {
 	t.Setenv("INHIRE_TENANTS_FILE", tenantsFile)
 	t.Setenv("INHIRE_ENRICH_DETAILS", "true")
 	t.Setenv("INHIRE_DETAILS_MODE", "ambiguous")
-	t.Setenv("INHIRE_DETAILS_CONCURRENCY", "1")
 	t.Setenv("INHIRE_DETAILS_TIMEOUT_MS", "1000")
 
 	var detailCalls int
 
 	adapter := NewInHire()
 	adapter.apiURL = "https://example.test/inhire"
-	adapter.concurrency = 1
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.String() {
 		case "https://example.test/inhire":

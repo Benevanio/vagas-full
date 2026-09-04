@@ -146,6 +146,45 @@ func TestGreenhouseSearchCachesBoardListAcrossKeywords(t *testing.T) {
 	}
 }
 
+func TestGreenhouseSearchCatalogAggregatesKeywordsWithoutDuplicates(t *testing.T) {
+	calls := 0
+	adapter := NewGreenhouse("acme", "Acme")
+	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return testResponse(`{
+			"jobs": [{
+				"id": 123,
+				"title": "Go Backend Engineer",
+				"content": "Build distributed services.",
+				"absolute_url": "https://boards.greenhouse.io/acme/jobs/123",
+				"location": {"name": "Remote"}
+			}]
+		}`), nil
+	})
+
+	jobs, err := adapter.SearchCatalog(
+		context.Background(),
+		[]string{"go", "backend", "java"},
+		domain.ScrapeRequest{},
+	)
+
+	if err != nil {
+		t.Fatalf("SearchCatalog returned error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one catalog request, got %d", calls)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected one job without keyword duplicates, got %d", len(jobs))
+	}
+	if jobs[0].Keyword != "go" {
+		t.Fatalf("expected first matching keyword, got %q", jobs[0].Keyword)
+	}
+	if got := strings.Join(jobs[0].Keywords, ","); got != "go,backend" {
+		t.Fatalf("expected all matching keywords, got %q", got)
+	}
+}
+
 func TestGreenhouseSearchHandlesNonOKStatus(t *testing.T) {
 	adapter := NewGreenhouse("missing", "Missing")
 	adapter.client = testHTTPClient(func(req *http.Request) (*http.Response, error) {
