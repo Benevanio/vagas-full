@@ -15,8 +15,8 @@ Active project-level architectural decisions (AD-NNN). Each design must conform 
 
 ## Handoff
 
-**Feature concluída:** `email-module` (PAV-76) — ✅ Done.
-**Estado:** 11/11 tasks implementadas e commitadas na branch `feature/pav-76-modulo-email` (Batch A: 5 commits; Batch B: 6 commits). Verifier PASS (11/11 ACs, gate 529/0, sensor 5/5 mutantes mortos). Relatório em `.specs/features/email-module/validation.md`.
-**Entregue:** API interna `emailService.send/sendWelcome`, fila BullMQ/Valkey (ioredis), worker in-process, `MailProvider`+Resend+Noop, template `welcome` react-email com CTA (`FRONTEND_URL`), boas-vindas no registro (`CredentialsService.register`), docs no `BACKEND.md`.
-**Pendências deixadas ao usuário:** (1) push + PR ainda NÃO feitos (a pedido); (2) envs de produção `EMAIL_API_KEY`/`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME` a comunicar ao dev quando for pra prod — sem elas o `NoopProvider` só loga.
-**Próximo passo:** quando o usuário pedir, abrir PR da PAV-76.
+**Feature concluída:** `newsletter-semanal` (PAV-109) — ✅ Done.
+**Estado:** 14/14 tasks implementadas e commitadas na branch `jovinull/pav-109-newsletter-semanal-com-vagas-que-combinam-do` (criada a partir de `master`), em 2 lotes (Fases 1-3: 8 commits; Fases 4-5: 6 commits + 1 fix). Verifier PASS (15/15 ACs, gate 633 backend + 345 frontend, sensor 3/3 mutantes mortos). Relatório em `.specs/features/newsletter-semanal/validation.md`. Lição candidata L-001 registrada em `.specs/LESSONS.md`.
+**Entregue:** job BullMQ `newsletter` (trigger semanal seg 08h America/Sao_Paulo + fan-out por usuário), tabela `newsletter_sends` (idempotência + dedup de frescor por histórico de envio), matching de vagas reaproveitando `jobMatch.service.ts`, ingestão RSS (`rss-parser`, feeds hnrss.org + TabNews), template `newsletter` react-email, endpoint público `POST /newsletter/unsubscribe` (token HMAC sem sessão), página pública `/newsletter/unsubscribe` no frontend, docs no `BACKEND.md`. AD-005/AD-006 registradas (BullMQ repeatable job como padrão de agendamento; token HMAC como padrão de link sem sessão).
+**Pendências deixadas ao usuário:** (1) push + PR ainda NÃO feitos; (2) validar ao vivo em produção se os feeds RSS (hnrss.org/frontpage, TabNews) continuam respondendo antes do primeiro envio real; (3) observação não-bloqueante do Verifier: `sendForUser` tem uma corrida teórica na checagem de idempotência sob múltiplos workers em paralelo — fora do escopo atual (deployment single-worker), mas vale considerar se o backend escalar horizontalmente.
+**Próximo passo:** quando o usuário pedir, abrir PR da PAV-109.
