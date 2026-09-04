@@ -215,10 +215,7 @@ export async function sendForUser(
   const unsubscribeUrl = `${frontendUrl}/newsletter/unsubscribe?token=${generateUnsubscribeToken(userId)}`;
 
   await emailService.send({
-    // SPEC_DEVIATION: template "newsletter" ainda não está registrado em
-    // templates/registry.ts (isso acontece em T9, próxima fase/batch); o
-    // cast é temporário até o registro existir.
-    template: "newsletter" as never,
+    template: "newsletter",
     to: user.email,
     data: {
       name: user.displayName || user.firstName || "",
