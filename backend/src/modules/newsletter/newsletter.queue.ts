@@ -63,20 +63,53 @@ export function getNewsletterQueue(): Queue<NewsletterJobData> {
   return _queue;
 }
 
+/** Tempo máximo de espera pelo registro do repeatable job no boot. */
+const SCHEDULE_TIMEOUT_MS = 5000;
+
+function timeoutAfter(ms: number, message: string): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(message)), ms);
+  });
+}
+
 /**
  * Registra o repeatable job semanal (toda segunda 08:00 America/Sao_Paulo).
  * Chamado 1x no boot; BullMQ dedupa por nome+repeat, então chamar de novo
  * (ex.: em cada deploy) não duplica o agendamento (NEWSL-01).
+ *
+ * SPEC_DEVIATION: usa uma conexão própria e efêmera (não a conexão de longa
+ * duração compartilhada com o worker) e limita a espera a
+ * `SCHEDULE_TIMEOUT_MS`, sempre encerrando a conexão ao final (sucesso,
+ * falha ou timeout). Reason: com a conexão singleton, um Valkey indisponível
+ * no boot deixava a chamada presa retentando indefinidamente em segundo
+ * plano (retry padrão do ioredis) — reusar essa mesma conexão presa no
+ * worker logo em seguida derrubaria também o processamento de jobs. Efeito
+ * observado no boot wiring (T12): boot nunca pode bloquear/travar por causa
+ * da newsletter, mesmo princípio de AD-002.
  */
 export async function scheduleWeeklyTrigger(): Promise<void> {
-  await getNewsletterQueue().add(
-    TRIGGER_JOB_NAME,
-    { type: "trigger" },
-    {
-      repeat: { pattern: "0 8 * * 1", tz: "America/Sao_Paulo" },
-      jobId: WEEKLY_TRIGGER_JOB_ID,
-    },
-  );
+  const { valkeyUrl } = getConfig();
+  const connection = new IORedis(valkeyUrl, { maxRetriesPerRequest: null });
+  const queue = new Queue<NewsletterJobData>(NEWSLETTER_QUEUE_NAME, {
+    connection,
+  });
+
+  try {
+    await Promise.race([
+      queue.add(
+        TRIGGER_JOB_NAME,
+        { type: "trigger" },
+        {
+          repeat: { pattern: "0 8 * * 1", tz: "America/Sao_Paulo" },
+          jobId: WEEKLY_TRIGGER_JOB_ID,
+        },
+      ),
+      timeoutAfter(SCHEDULE_TIMEOUT_MS, "Timeout ao agendar newsletter semanal"),
+    ]);
+  } finally {
+    void Promise.resolve(queue.close()).catch(() => {});
+    void Promise.resolve(connection.quit()).catch(() => {});
+  }
 }
 
 /**
