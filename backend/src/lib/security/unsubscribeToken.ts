@@ -3,6 +3,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const HMAC_ALGORITHM = "sha256";
 const TOKEN_DOMAIN = "newsletter-unsubscribe";
 
+/** HMAC-SHA256 em hex: exatamente 64 caracteres hex minúsculos. */
+const SIGNATURE_PATTERN = /^[0-9a-f]{64}$/;
+
 /**
  * Chave derivada de ENCRYPTION_MASTER_KEY com domain separation (AD-006), pra
  * não reutilizar a master key diretamente nem exigir um novo secret.
@@ -45,6 +48,11 @@ export function verifyUnsubscribeToken(token: string): string | null {
 
   const [encodedUserId, signature] = parts;
   if (!encodedUserId || !signature) return null;
+
+  // `Buffer.from(sig, "hex")` trunca silenciosamente no primeiro caractere
+  // inválido, então "assinatura válida + lixo no fim" passaria pela
+  // comparação de tamanho. Rejeita qualquer coisa fora do formato exato.
+  if (!SIGNATURE_PATTERN.test(signature)) return null;
 
   const userId = Buffer.from(encodedUserId, "base64url").toString("utf8");
   if (!userId) return null;

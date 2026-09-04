@@ -83,6 +83,19 @@ describe("unsubscribeToken", () => {
     expect(verifyUnsubscribeToken(tamperedToken)).toBeNull();
   });
 
+  it.each([
+    ["lixo não-hex no fim", (t: string) => `${t}x`],
+    ["dois chars extras no fim", (t: string) => `${t}zz`],
+    ["assinatura mais longa que 64 hex", (t: string) => `${t}ab`],
+  ])(
+    "retorna null quando a assinatura tem sufixo extra: %s",
+    (_label, mutate) => {
+      const token = generateUnsubscribeToken(USER_ID);
+
+      expect(verifyUnsubscribeToken(mutate(token))).toBeNull();
+    },
+  );
+
   it("retorna null quando o payload de userId é trocado (assinatura de outro usuário)", () => {
     const tokenA = generateUnsubscribeToken(USER_ID);
     const tokenB = generateUnsubscribeToken(OTHER_USER_ID);
