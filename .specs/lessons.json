@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 2,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "spec_deviation::boot time one shot scheduling calls against redis valkey e g registering a bullmq repeatable job should use a short lived connection with a timeout not the shared long lived singleton so a broker outage at boot cannot leave the singleton connection stuck retrying and block subsequent worker queue use",
+      "text": "Boot-time one-shot scheduling calls against Redis/Valkey (e.g. registering a BullMQ repeatable job) should use a short-lived connection with a timeout, not the shared long-lived singleton, so a broker outage at boot cannot leave the singleton connection stuck retrying and block subsequent worker/queue use.",
+      "signal": "spec_deviation",
+      "scope": "queue",
+      "status": "candidate",
+      "features": [
+        "newsletter-semanal"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "backend/src/modules/newsletter/newsletter.queue.ts:80-89 (SPEC_DEVIATION) (queue)"
+      ],
+      "created": "2026-09-04T01:47:15Z",
+      "last_seen": "2026-09-04T01:47:15Z"
+    }
+  ]
+}
