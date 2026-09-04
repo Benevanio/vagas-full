@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
   usersFindFirst: vi.fn(),
+  newsletterSendsFindFirst: vi.fn(),
+  selectWhere: vi.fn(),
+  insertValues: vi.fn(),
 }));
 
 const cacheMocks = vi.hoisted(() => ({
@@ -22,12 +25,24 @@ vi.mock("../../../../src/db/client", () => ({
   db: {
     query: {
       users: { findFirst: dbMocks.usersFindFirst },
+      newsletterSends: { findFirst: dbMocks.newsletterSendsFindFirst },
     },
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({ where: dbMocks.selectWhere })),
+    })),
+    insert: vi.fn(() => ({ values: dbMocks.insertValues })),
   },
 }));
 
 vi.mock("../../../../src/db/schema", () => ({
   users: { id: "users.id" },
+  newsletterSends: {
+    userId: "newsletterSends.userId",
+    isoWeek: "newsletterSends.isoWeek",
+    createdAt: "newsletterSends.createdAt",
+    sentJobIds: "newsletterSends.sentJobIds",
+    status: "newsletterSends.status",
+  },
 }));
 
 vi.mock("../../../../src/lib/cache", () => ({
@@ -46,7 +61,11 @@ vi.mock("../../../../src/modules/notifications/notifications.service", () => ({
   },
 }));
 
-import { computeMatchedJobsForUser } from "../../../../src/modules/newsletter/newsletter.service";
+import {
+  computeMatchedJobsForUser,
+  getIsoWeek,
+  getRecentlySentJobIds,
+} from "../../../../src/modules/newsletter/newsletter.service";
 
 describe("newsletter.service — computeMatchedJobsForUser", () => {
   beforeEach(() => {
@@ -116,5 +135,47 @@ describe("newsletter.service — computeMatchedJobsForUser", () => {
     await computeMatchedJobsForUser("user-1", [], 5);
 
     expect(notificationsMocks.createHighMatchIfMissing).not.toHaveBeenCalled();
+  });
+});
+
+describe("newsletter.service — getIsoWeek", () => {
+  it.each([
+    ["2026-08-31T12:00:00Z", "2026-W36"],
+    ["2026-09-03T12:00:00Z", "2026-W36"],
+    ["2026-01-01T12:00:00Z", "2026-W01"],
+    // Virada de ano: 31/dez/2020 (quinta) pertence à semana 53 de 2020.
+    ["2020-12-31T12:00:00Z", "2020-W53"],
+    // 1/jan/2021 (sexta) ainda pertence à semana 53 do ano ISO 2020.
+    ["2021-01-01T12:00:00Z", "2020-W53"],
+    ["2021-01-04T12:00:00Z", "2021-W01"],
+    // 30/dez/2019 (segunda) já pertence à semana 1 do ano ISO 2020.
+    ["2019-12-30T12:00:00Z", "2020-W01"],
+  ])("retorna a semana ISO correta para %s", (isoDate, expected) => {
+    expect(getIsoWeek(new Date(isoDate))).toBe(expected);
+  });
+});
+
+describe("newsletter.service — getRecentlySentJobIds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("agrega sentJobIds das últimas weeksBack semanas sem duplicar (NEWSL-09)", async () => {
+    dbMocks.selectWhere.mockResolvedValue([
+      { sentJobIds: ["job-1", "job-2"] },
+      { sentJobIds: ["job-2", "job-3"] },
+    ]);
+
+    const result = await getRecentlySentJobIds("user-1", 8);
+
+    expect(result.sort()).toEqual(["job-1", "job-2", "job-3"]);
+  });
+
+  it("retorna [] quando o usuário não tem histórico de envio", async () => {
+    dbMocks.selectWhere.mockResolvedValue([]);
+
+    const result = await getRecentlySentJobIds("user-1", 8);
+
+    expect(result).toEqual([]);
   });
 });
