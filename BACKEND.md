@@ -137,6 +137,34 @@ await emailService.sendWelcome({ email: "usuario@exemplo.com", name: "Ana" });
 1. Implemente a interface `MailProvider` (`send({ to, subject, html, replyTo? })`) em `src/modules/email/providers/<nome>.provider.ts`. Em falha, **lance** (para o BullMQ re-tentar).
 2. Ajuste `getMailProvider()` em `mail-provider.ts` para selecioná-lo pela configuração. Nenhum caller precisa mudar (contrato via interface).
 
+## Módulo de Newsletter
+
+Módulo centralizado em `src/modules/newsletter` (PAV-109) que envia, toda segunda 08:00 (America/Sao_Paulo), um e-mail semanal com vagas recentes que combinam com o perfil do usuário, resumo de candidaturas e notícias do mercado tech. Reaproveita o módulo de e-mail (`emailService`) para o envio — nunca fala com o provedor diretamente.
+
+**Fluxo:** um repeatable job BullMQ (fila `newsletter`, agendado via `scheduleWeeklyTrigger()` no boot) dispara o job `trigger`, processado por `runWeeklyTrigger()`: busca notícias RSS **uma única vez** por execução (`fetchTechNews`) e cacheia o snapshot no Valkey (`newsletter:news:{isoWeek}`, TTL 7 dias), lista usuários com `userPreferences.emailNotifications=true` e enfileira **1 job filho por usuário** (`send-user`, `{userId, isoWeek}`). Cada filho é processado por `sendForUser()`: checa idempotência (`newsletter_sends` único por `userId`+`isoWeek`), calcula vagas com match (`computeMatchedJobsForUser`, motor de `jobMatch.service.ts`, excluindo vagas já enviadas nas últimas 8 semanas via `getRecentlySentJobIds`), conta candidaturas (`savedJobs` com status `applied`/`interviewing`/`accepted`) e chama `emailService.send({ template: "newsletter", ... })`. Sem vaga com match ⇒ grava `status="skipped_no_match"` e **não envia e-mail**. Falha de RSS na execução nunca bloqueia o envio (e-mail segue sem a seção de notícias); usuário excluído/sem e-mail válido no meio do processamento é pulado com log de aviso, sem derrubar os demais.
+
+**Arquivos:**
+
+- `newsletter.queue.ts` — fila BullMQ `newsletter` + conexão `ioredis` dedicada (`getNewsletterQueue`, `scheduleWeeklyTrigger`, `enqueueUserSend`, `closeNewsletterQueue`).
+- `newsletter.worker.ts` — worker in-process (`startNewsletterWorker`, `stopNewsletterWorker`), despacha por tipo de job (`trigger` → `runWeeklyTrigger`, `send-user` → `sendForUser`).
+- `newsletter.service.ts` — lógica de negócio: `runWeeklyTrigger`, `sendForUser`, `computeMatchedJobsForUser`, `getIsoWeek`, `getRecentlySentJobIds`.
+- `newsFeed.service.ts` — ingestão RSS (`fetchTechNews`, via `rss-parser`); feed que falha (timeout/HTTP/parse) é descartado com `logWarn`, nunca lança.
+- `newsletter.controller.ts` + `../../routes/newsletter.routes.ts` — endpoint público de unsubscribe.
+- `../email/templates/newsletter.tsx` — template react-email (registrado em `templates/registry.ts` como `newsletter`).
+- `../../lib/security/unsubscribeToken.ts` — token HMAC opaco sem sessão (`generateUnsubscribeToken`, `verifyUnsubscribeToken`).
+
+**Tabela `newsletter_sends`:** controla idempotência e histórico de envio — `unique(userId, isoWeek)` garante no máximo 1 envio por usuário por semana ISO (evita duplicata em reprocessamento/retry); `status` é `"sent"` ou `"skipped_no_match"`; `sentJobIds` (jsonb) guarda os ids das vagas enviadas, usado por `getRecentlySentJobIds` (lookback de 8 semanas) para nunca reenviar a mesma vaga a um usuário.
+
+**Endpoint de unsubscribe:**
+
+- `POST /newsletter/unsubscribe` — body `{ token: string }`. **Rota pública**, sem `withSession`/`requireAuth` (token-autenticada, ver `app.ts`). Token válido ⇒ `userPreferences.emailNotifications=false`, resposta `200 { ok: true }`. Token malformado/adulterado/de usuário inexistente ⇒ `200 { ok: false }` — nunca revela se o usuário existe (mesmo shape/status em ambos os casos). Corpo sem `token` ⇒ `400` (validação Zod, mesmo padrão dos outros controllers).
+- Link gerado em `sendForUser()`: `${FRONTEND_URL}/newsletter/unsubscribe?token=<token>` — consumido pela página pública `/newsletter/unsubscribe` no frontend (`UnsubscribePage.tsx`, fora de `ProtectedRoute`/`PublicRoute`).
+
+**Variáveis de ambiente:**
+
+- `NEWSLETTER_NEWS_FEED_URLS` — lista de URLs de feed RSS separadas por vírgula (opcional). Vazia ⇒ fallback padrão (agregador de Hacker News + TabNews).
+- Reaproveita `VALKEY_URL` (fila BullMQ + cache do snapshot de notícias), `FRONTEND_URL` (link de unsubscribe) e `ENCRYPTION_MASTER_KEY` (chave-base do token de unsubscribe, com domain separation — nenhum secret novo é exigido).
+
 ## Middlewares
 
 - `withSession` — integra `iron-session` (sessões + cookie `vagas_session`).
@@ -194,6 +222,9 @@ Base: `/`
   - `PATCH /saved-jobs/:id` — atualiza vaga salva.
   - `DELETE /saved-jobs/:id` — remove vaga salva.
 
+- Newsletter
+  - `POST /newsletter/unsubscribe` — body `{ token }`. Rota pública (token-autenticada, sem sessão). Token válido: `200 { ok: true }`. Token inválido/adulterado/de usuário inexistente: `200 { ok: false }` (nunca revela existência do usuário).
+
 - Admin
   - `GET /admin/users` — lista usuários.
   - `GET /admin/users/:id` — obtém usuário por id.
@@ -214,6 +245,7 @@ Observações de segurança nas rotas:
 
 - Rotas sob `/users`, `/jobs`, `/keywords`, `/notifications`, `/saved-jobs` e `/admin` usam `withSession` + `requireAuth` (quando aplicável).
 - `auth` usa `withSession` para armazenar OAuth state e criar sessão.
+- `/newsletter` **não** usa `withSession`/`requireAuth` — o unsubscribe é autenticado por token opaco (HMAC) no corpo da requisição, não por sessão.
 
 ## Variáveis de ambiente importantes
 
@@ -235,6 +267,7 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 - `EMAIL_FROM_ADDRESS` — endereço remetente dos e-mails.
 - `EMAIL_FROM_NAME` — nome exibido do remetente.
 - `EMAIL_QUEUE_ATTEMPTS` — tentativas por job de e-mail (padrão 3).
+- `NEWSLETTER_NEWS_FEED_URLS` — URLs de feed RSS para a newsletter semanal, separadas por vírgula (opcional; vazio ⇒ fallback padrão).
 - `GO_SCRAPER_URL` — URL do serviço Go que realiza scraping.
 - `SESSION_SECRET` — senha para `iron-session` (obrigatória em produção).
 - `ENCRYPTION_MASTER_KEY`, `ENCRYPTION_KEY_ID`, `SEARCH_KEY` — criptografia e campos pesquisáveis de PII.
