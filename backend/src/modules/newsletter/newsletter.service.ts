@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray } from "drizzle-orm";
 import { getConfig } from "../../config";
 import { db } from "../../db/client";
-import { newsletterSends, savedJobs, users } from "../../db/schema";
+import { newsletterSends, savedJobs, userPreferences, users } from "../../db/schema";
 import { cacheAbsoluteSMembers, cacheGetJobsByIds, getCache } from "../../lib/cache";
 import { logWarn } from "../../logger";
 import { generateUnsubscribeToken } from "../../lib/security/unsubscribeToken";
@@ -12,7 +12,8 @@ import {
   type MatchedJob,
   scoreJobWithTechnologies,
 } from "../jobs/services/jobMatch.service";
-import type { NewsItem } from "./newsFeed.service";
+import { fetchTechNews, type NewsItem } from "./newsFeed.service";
+import { enqueueUserSend } from "./newsletter.queue";
 import { toPublicUser } from "../users/users.mapper";
 
 const JOB_INDEX_KEY = "scraper:jobs:index";
@@ -235,4 +236,56 @@ export async function sendForUser(
     status: "sent",
     sentJobIds: matchedJobs.map((job) => String(job.id ?? "")),
   });
+}
+
+/** Grava o snapshot de notícias da semana no Valkey (TTL 7 dias). */
+async function setCachedNews(isoWeek: string, news: NewsItem[]): Promise<void> {
+  const client = await getCache();
+  await client.set(newsCacheKey(isoWeek), JSON.stringify(news), {
+    EX: NEWS_CACHE_TTL_SECONDS,
+  });
+}
+
+async function getEligibleUserIds(): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userPreferences.userId })
+    .from(userPreferences)
+    .where(eq(userPreferences.emailNotifications, true));
+
+  return rows.map((row) => row.userId);
+}
+
+async function getAlreadySentUserIds(isoWeek: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ userId: newsletterSends.userId })
+    .from(newsletterSends)
+    .where(eq(newsletterSends.isoWeek, isoWeek));
+
+  return new Set(rows.map((row) => row.userId));
+}
+
+/**
+ * Dispara a execução semanal do job: busca notícias 1x (nunca por usuário)
+ * e cacheia em Valkey, lista usuários opt-in (`emailNotifications=true`)
+ * ainda sem `newsletter_sends` pra esta semana ISO e enfileira 1 job filho
+ * por usuário elegível (NEWSL-01, NEWSL-07, NEWSL-10, NEWSL-11).
+ */
+export async function runWeeklyTrigger(): Promise<void> {
+  const isoWeek = getIsoWeek(new Date());
+
+  const news = await fetchTechNews();
+  await setCachedNews(isoWeek, news);
+
+  const [eligibleUserIds, alreadySentUserIds] = await Promise.all([
+    getEligibleUserIds(),
+    getAlreadySentUserIds(isoWeek),
+  ]);
+
+  const pendingUserIds = eligibleUserIds.filter(
+    (userId) => !alreadySentUserIds.has(userId),
+  );
+
+  await Promise.all(
+    pendingUserIds.map((userId) => enqueueUserSend(userId, isoWeek)),
+  );
 }

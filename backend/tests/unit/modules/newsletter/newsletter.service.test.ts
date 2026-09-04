@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const dbMocks = vi.hoisted(() => ({
-  usersFindFirst: vi.fn(),
-  newsletterSendsFindFirst: vi.fn(),
-  selectWhere: vi.fn(),
-  insertValues: vi.fn(),
-}));
+const dbMocks = vi.hoisted(() => {
+  const selectWhere = vi.fn();
+  const select = vi.fn(() => ({ from: vi.fn(() => ({ where: selectWhere })) }));
+  return {
+    usersFindFirst: vi.fn(),
+    newsletterSendsFindFirst: vi.fn(),
+    select,
+    selectWhere,
+    insertValues: vi.fn(),
+  };
+});
 
 const cacheMocks = vi.hoisted(() => ({
   cacheAbsoluteSMembers: vi.fn(),
@@ -23,6 +28,15 @@ const notificationsMocks = vi.hoisted(() => ({
 
 const cacheClientMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  set: vi.fn(),
+}));
+
+const newsFeedMocks = vi.hoisted(() => ({
+  fetchTechNews: vi.fn(),
+}));
+
+const newsletterQueueMocks = vi.hoisted(() => ({
+  enqueueUserSend: vi.fn(),
 }));
 
 const emailServiceMocks = vi.hoisted(() => ({
@@ -51,9 +65,7 @@ vi.mock("../../../../src/db/client", () => ({
       users: { findFirst: dbMocks.usersFindFirst },
       newsletterSends: { findFirst: dbMocks.newsletterSendsFindFirst },
     },
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({ where: dbMocks.selectWhere })),
-    })),
+    select: dbMocks.select,
     insert: vi.fn(() => ({ values: dbMocks.insertValues })),
   },
 }));
@@ -116,10 +128,19 @@ vi.mock("../../../../src/modules/notifications/notifications.service", () => ({
   },
 }));
 
+vi.mock("../../../../src/modules/newsletter/newsFeed.service", () => ({
+  fetchTechNews: newsFeedMocks.fetchTechNews,
+}));
+
+vi.mock("../../../../src/modules/newsletter/newsletter.queue", () => ({
+  enqueueUserSend: newsletterQueueMocks.enqueueUserSend,
+}));
+
 import {
   computeMatchedJobsForUser,
   getIsoWeek,
   getRecentlySentJobIds,
+  runWeeklyTrigger,
   sendForUser,
 } from "../../../../src/modules/newsletter/newsletter.service";
 
@@ -358,5 +379,67 @@ describe("newsletter.service — sendForUser", () => {
     expect(emailServiceMocks.send).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ news: [] }) }),
     );
+  });
+});
+
+describe("newsletter.service — runWeeklyTrigger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T10:00:00Z")); // segunda, semana 2026-W36
+    newsFeedMocks.fetchTechNews.mockResolvedValue([
+      { title: "Notícia", link: "https://n.com/1" },
+    ]);
+    cacheClientMocks.set.mockResolvedValue(undefined);
+    dbMocks.selectWhere
+      .mockResolvedValueOnce([{ userId: "u1" }, { userId: "u2" }, { userId: "u3" }])
+      .mockResolvedValueOnce([{ userId: "u2" }]);
+    newsletterQueueMocks.enqueueUserSend.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("chama fetchTechNews exatamente 1x por execução (NEWSL-07)", async () => {
+    await runWeeklyTrigger();
+
+    expect(newsFeedMocks.fetchTechNews).toHaveBeenCalledTimes(1);
+  });
+
+  it("grava o snapshot de notícias no Valkey com TTL de 7 dias", async () => {
+    await runWeeklyTrigger();
+
+    expect(cacheClientMocks.set).toHaveBeenCalledWith(
+      "newsletter:news:2026-W36",
+      JSON.stringify([{ title: "Notícia", link: "https://n.com/1" }]),
+      { EX: 7 * 24 * 60 * 60 },
+    );
+  });
+
+  it("considera apenas usuários com emailNotifications=true e não reenfileira quem já tem newsletter_sends na semana (NEWSL-10/11)", async () => {
+    await runWeeklyTrigger();
+
+    expect(dbMocks.select).toHaveBeenNthCalledWith(1, {
+      userId: "userPreferences.userId",
+    });
+    expect(dbMocks.select).toHaveBeenNthCalledWith(2, {
+      userId: "newsletterSends.userId",
+    });
+    expect(newsletterQueueMocks.enqueueUserSend).toHaveBeenCalledTimes(2);
+    expect(newsletterQueueMocks.enqueueUserSend).toHaveBeenCalledWith("u1", "2026-W36");
+    expect(newsletterQueueMocks.enqueueUserSend).toHaveBeenCalledWith("u3", "2026-W36");
+    expect(newsletterQueueMocks.enqueueUserSend).not.toHaveBeenCalledWith(
+      "u2",
+      expect.anything(),
+    );
+  });
+
+  it("conclui sem erro e sem enfileirar nada quando não há usuários elegíveis", async () => {
+    dbMocks.selectWhere.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    await expect(runWeeklyTrigger()).resolves.toBeUndefined();
+
+    expect(newsletterQueueMocks.enqueueUserSend).not.toHaveBeenCalled();
   });
 });
