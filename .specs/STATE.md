@@ -10,6 +10,8 @@ Active project-level architectural decisions (AD-NNN). Each design must conform 
 | AD-002 | Envio de e-mail é assíncrono via fila BullMQ sobre Valkey (conexão ioredis dedicada). Callers apenas enfileiram; nunca bloqueiam nem falham por causa de e-mail. | active | PAV-76 |
 | AD-003 | Provedor de e-mail acessado por trás da interface `MailProvider`. Implementação inicial: Resend. Trocar de provedor não altera código chamador. | active | PAV-76 |
 | AD-004 | Templates de e-mail são componentes react-email tipados, renderizados server-side para HTML. Versões `react`/`react-dom`/`@types/react` fixadas em 19.x para casar com o frontend. | active | PAV-76 |
+| AD-005 | Jobs agendados/recorrentes no backend usam BullMQ repeatable job (fila dedicada), nunca cron de SO ou serviço de scheduling externo. | active | PAV-109 |
+| AD-006 | Links de ação sem sessão (ex.: unsubscribe) usam token opaco HMAC com chave derivada de `ENCRYPTION_MASTER_KEY` (domain separation por finalidade) e `timingSafeEqual` na validação — mesmo padrão de `lib/security/searchableHash.ts`. Nunca JWT (sem dependência `jsonwebtoken` no projeto). | active | PAV-109 |
 
 ## Handoff
 
