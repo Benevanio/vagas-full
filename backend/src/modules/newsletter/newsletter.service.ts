@@ -1,16 +1,27 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { getConfig } from "../../config";
 import { db } from "../../db/client";
-import { newsletterSends, users } from "../../db/schema";
-import { cacheAbsoluteSMembers, cacheGetJobsByIds } from "../../lib/cache";
+import { newsletterSends, savedJobs, users } from "../../db/schema";
+import { cacheAbsoluteSMembers, cacheGetJobsByIds, getCache } from "../../lib/cache";
+import { logWarn } from "../../logger";
+import { generateUnsubscribeToken } from "../../lib/security/unsubscribeToken";
+import { emailService } from "../email/email.service";
 import {
   getUserMatchTechnologies,
   type MatchableJob,
   type MatchedJob,
   scoreJobWithTechnologies,
 } from "../jobs/services/jobMatch.service";
+import type { NewsItem } from "./newsFeed.service";
+import { toPublicUser } from "../users/users.mapper";
 
 const JOB_INDEX_KEY = "scraper:jobs:index";
 const MILLISECONDS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+const MATCHED_JOBS_LIMIT = 5;
+const RECENT_SEND_LOOKBACK_WEEKS = 8;
+const NEWS_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const APPLIED_STATUSES = ["applied", "interviewing", "accepted"] as const;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Busca o índice global de vagas (Valkey), pontua pelo perfil do usuário
@@ -101,4 +112,127 @@ export async function getRecentlySentJobIds(
   }
 
   return [...ids];
+}
+
+function newsCacheKey(isoWeek: string): string {
+  return `newsletter:news:${isoWeek}`;
+}
+
+/**
+ * Lê o snapshot de notícias da semana gravado por `runWeeklyTrigger`.
+ * Ausente/expirado → `[]` (a falha de RSS nunca bloqueia o envio, NEWSL-08).
+ */
+async function getCachedNews(isoWeek: string): Promise<NewsItem[]> {
+  const client = await getCache();
+  const raw = await client.get(newsCacheKey(isoWeek));
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function countApplications(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ value: count() })
+    .from(savedJobs)
+    .where(
+      and(eq(savedJobs.userId, userId), inArray(savedJobs.status, APPLIED_STATUSES)),
+    );
+
+  return row?.value ?? 0;
+}
+
+/**
+ * Processa o envio da newsletter semanal pra um usuário: checa idempotência
+ * (`newsletter_sends` por `userId`+`isoWeek`), calcula vagas com match,
+ * resumo de candidaturas e notícias, e envia via `emailService.send`
+ * (nunca fala com o provedor direto — AD-001). Usuário excluído ou sem
+ * e-mail válido no meio do processamento é pulado com `logWarn`, sem lançar
+ * (NEWSL-01, NEWSL-03, NEWSL-04, NEWSL-05, NEWSL-06, NEWSL-09, NEWSL-12).
+ */
+export async function sendForUser(
+  userId: string,
+  isoWeek: string,
+): Promise<void> {
+  const existing = await db.query.newsletterSends.findFirst({
+    where: and(
+      eq(newsletterSends.userId, userId),
+      eq(newsletterSends.isoWeek, isoWeek),
+    ),
+  });
+  if (existing) return;
+
+  const rawUser = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  if (!rawUser) {
+    logWarn("Usuário não encontrado para envio da newsletter.", {
+      userId,
+      isoWeek,
+    });
+    return;
+  }
+
+  const user = toPublicUser(rawUser);
+
+  if (!user.email || !EMAIL_REGEX.test(user.email)) {
+    logWarn("Usuário sem e-mail válido para envio da newsletter.", {
+      userId,
+      isoWeek,
+    });
+    return;
+  }
+
+  const excludeJobIds = await getRecentlySentJobIds(
+    userId,
+    RECENT_SEND_LOOKBACK_WEEKS,
+  );
+  const matchedJobs = await computeMatchedJobsForUser(
+    userId,
+    excludeJobIds,
+    MATCHED_JOBS_LIMIT,
+  );
+
+  if (matchedJobs.length === 0) {
+    await db.insert(newsletterSends).values({
+      userId,
+      isoWeek,
+      status: "skipped_no_match",
+      sentJobIds: [],
+    });
+    return;
+  }
+
+  const appliedCount = await countApplications(userId);
+  const news = await getCachedNews(isoWeek);
+  const { frontendUrl } = getConfig();
+  const unsubscribeUrl = `${frontendUrl}/newsletter/unsubscribe?token=${generateUnsubscribeToken(userId)}`;
+
+  await emailService.send({
+    // SPEC_DEVIATION: template "newsletter" ainda não está registrado em
+    // templates/registry.ts (isso acontece em T9, próxima fase/batch); o
+    // cast é temporário até o registro existir.
+    template: "newsletter" as never,
+    to: user.email,
+    data: {
+      name: user.displayName || user.firstName || "",
+      matchedJobs,
+      appliedCount,
+      news,
+      unsubscribeUrl,
+      appUrl: frontendUrl,
+    },
+  });
+
+  await db.insert(newsletterSends).values({
+    userId,
+    isoWeek,
+    status: "sent",
+    sentJobIds: matchedJobs.map((job) => String(job.id ?? "")),
+  });
 }
