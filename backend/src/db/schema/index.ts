@@ -3,6 +3,7 @@ export * from "./applicationEvents";
 export * from "./auditLogs";
 export * from "./credentials";
 export * from "./keywords";
+export * from "./newsletterSends";
 export * from "./permissionRules";
 export * from "./savedJobs";
 export * from "./userNotifications";
