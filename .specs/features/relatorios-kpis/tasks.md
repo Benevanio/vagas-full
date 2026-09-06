@@ -9,7 +9,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/relatorios-kpis/design.md`
-**Status**: Draft
+**Status**: In Progress — Batch A (T1–T6) done, Batch B (T7–T13) pendente.
+
+**Batch A — T1–T6 (backend): ✅ Done.**
+- T1 `747b532` · T2 `85df508` · T3 `7ee0761` · T4 `e1e3cca` · T5 `f856f37` · T6 `15316dd`
+- Backend: 570→609 testes (608 passam; 1 falha intermitente pré-existente e não relacionada em `tests/unit/services/server.test.ts` — passa isolado, timing-based, não introduzida por esta feature). Frontend: 344/344. `tsc --noEmit` no backend: só os 5 erros pré-existentes de `src/modules/auth` (ver `memory/ts-errors-auth-module.md`); zero erros novos em `src/modules/reports`.
+- Nota: o worker original do Batch A (sub-agent) caiu por rate limit da sessão logo após escrever T1 (implementação + teste, sem gate/commit). T1 foi retomado, teve 1 bug de fixture no teste corrigido (semana ISO somada errada em um cenário), e T1–T6 seguiram inline a partir daí.
 
 Commits: **português, conventional commits, sem `Co-Authored-By` / trailer de sessão** (instrução do usuário). Um commit atômico por task.
 
