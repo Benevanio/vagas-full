@@ -142,4 +142,24 @@ describe("NewDashboardPage — rota /relatorios (KPI-10)", () => {
     },
     10000,
   );
+
+  it("destaca 'Relatórios' na sidebar e na tab bar mobile quando ativo (KPI-10)", async () => {
+    renderPage("/relatorios");
+    await screen.findByRole("heading", { name: "Relatórios" });
+
+    const links = screen.getAllByRole("link", { name: "Relatórios" });
+    expect(links).toHaveLength(2); // sidebar (desktop) + tab bar (mobile)
+
+    const sidebarLink = links.find((link) =>
+      link.className.includes("bg-primary"),
+    );
+    expect(sidebarLink).toBeDefined();
+    expect(sidebarLink).toHaveAttribute("href", "/relatorios");
+
+    const mobileTabLink = links.find(
+      (link) => link.getAttribute("aria-current") === "page",
+    );
+    expect(mobileTabLink).toBeDefined();
+    expect(mobileTabLink).toHaveAttribute("href", "/relatorios");
+  });
 });

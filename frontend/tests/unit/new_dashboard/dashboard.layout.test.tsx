@@ -187,7 +187,8 @@ describe("new_dashboard dashboard and layout components", () => {
     });
     const activeLink = within(navigation).getByRole("link", { name: /vagas/i });
 
-    expect(within(navigation).getAllByRole("link")).toHaveLength(4);
+    // 5 abas desde a adição de "Relatórios" (PAV-30).
+    expect(within(navigation).getAllByRole("link")).toHaveLength(5);
     expect(activeLink).toHaveAttribute("aria-current", "page");
     expect(within(navigation).getByRole("link", { name: /início/i })).toHaveAttribute(
       "href",

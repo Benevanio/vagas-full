@@ -10,6 +10,7 @@ const items = [
   { label: "Dashboard", to: "/dashboard", icon: Icons.Dashboard },
   { label: "Vagas", to: "/vagas", icon: Icons.Vagas },
   { label: "Mentoria", to: "/mentoria", icon: Icons.Mentoria },
+  { label: "Relatórios", to: "/relatorios", icon: Icons.Relatorios },
 ];
 
 const footerItems = [
