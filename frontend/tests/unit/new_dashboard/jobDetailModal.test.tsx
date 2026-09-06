@@ -86,6 +86,68 @@ describe("JobDetailModal — informações principais (JDM-01, JDM-02)", () => {
   });
 });
 
+describe("JobDetailModal — detalhes adicionais sem duplicar dado (JDM-04, JDM-05, JDM-06)", () => {
+  it("omite do bloco de detalhes adicionais campos já representados nos tiles principais", () => {
+    render(
+      <JobDetailModal
+        job={job({
+          rawPayload: {
+            location: "São Paulo, SP",
+            salary: "A combinar",
+            company: "ACME",
+            modality: "Remoto",
+            postedAt: "2026-01-10",
+          },
+        })}
+        onClose={noop}
+        onStatusChange={noop}
+        onNotesChange={noop}
+      />,
+    );
+
+    expect(screen.getByText("Detalhes adicionais")).toBeInTheDocument();
+    expect(screen.getByText("Publicado em")).toBeInTheDocument();
+    expect(screen.getByText("2026-01-10")).toBeInTheDocument();
+    // "Local"/"Modalidade" continuam existindo (como tiles), mas sem um 2º
+    // bloco "Local"/"Modalidade" vindo do payload bruto.
+    expect(screen.getAllByText("Local")).toHaveLength(1);
+    expect(screen.getAllByText("Modalidade")).toHaveLength(1);
+  });
+
+  it("quando não sobra nenhum campo após o filtro, o bloco de detalhes adicionais não renderiza", () => {
+    render(
+      <JobDetailModal
+        job={job({
+          rawPayload: {
+            location: "São Paulo, SP",
+            salary: "A combinar",
+            company: "ACME",
+            modality: "Remoto",
+          },
+        })}
+        onClose={noop}
+        onStatusChange={noop}
+        onNotesChange={noop}
+      />,
+    );
+
+    expect(screen.queryByText("Detalhes adicionais")).not.toBeInTheDocument();
+  });
+
+  it("sem rawPayload, o bloco de detalhes adicionais não renderiza", () => {
+    render(
+      <JobDetailModal
+        job={job()}
+        onClose={noop}
+        onStatusChange={noop}
+        onNotesChange={noop}
+      />,
+    );
+
+    expect(screen.queryByText("Detalhes adicionais")).not.toBeInTheDocument();
+  });
+});
+
 describe("JobDetailModal — link principal (JDM-03, regressão)", () => {
   it("o botão 'Abrir vaga' aponta para job.jobLink e abre em nova aba", () => {
     render(

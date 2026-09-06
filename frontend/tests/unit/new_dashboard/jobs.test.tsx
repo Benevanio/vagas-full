@@ -389,7 +389,11 @@ describe("new_dashboard job components", () => {
       />,
     );
 
-    expect(screen.getByText(/payload da vaga/i)).toBeInTheDocument();
+    // PAV-92: "Payload da vaga" virou "Detalhes adicionais" e não duplica
+    // mais campos já representados em outro lugar do detalhe. O `url` de
+    // baseJob.rawPayload é igual a `jobLink` (já mostrado em "Abrir vaga"),
+    // então o bloco não tem nada extra pra mostrar aqui e não renderiza.
+    expect(screen.queryByText(/detalhes adicionais/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /abrir vaga/i })).toHaveAttribute(
       "href",
       baseJob.jobLink,

@@ -31,6 +31,23 @@ const payloadLabels: Record<string, string> = {
   keywords: "Keywords",
 };
 
+/**
+ * Campos do payload bruto que já têm representação amigável em outro lugar
+ * do detalhe (tiles principais, subtítulo do modal ou link "Abrir vaga") —
+ * mostrá-los de novo aqui seria duplicar a mesma informação.
+ */
+const redundantPayloadKeys = new Set([
+  "id",
+  "title",
+  "company",
+  "location",
+  "url",
+  "salary",
+  "modality",
+  "source",
+  "description",
+]);
+
 function payloadValueToText(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "Não informado";
@@ -130,7 +147,8 @@ export function JobDetailModal({
   }, [isTracked, job.id, timelineVersion]);
 
   const payloadEntries = Object.entries(job.rawPayload ?? {}).filter(
-    ([key]) => key !== "description",
+    ([key, value]) =>
+      !redundantPayloadKeys.has(key) && payloadValueToText(value) !== "Não informado",
   );
   const description = payloadValueToText(job.rawPayload?.description);
   const hasDescription = description !== "Não informado";
@@ -209,7 +227,7 @@ export function JobDetailModal({
         {payloadEntries.length > 0 ? (
           <div className="space-y-2">
             <span className="text-xs font-bold uppercase text-muted-foreground">
-              Payload da vaga
+              Detalhes adicionais
             </span>
             <div className="grid gap-2">
               {payloadEntries.map(([key, value]) => {
