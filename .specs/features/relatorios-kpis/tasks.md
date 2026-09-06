@@ -9,7 +9,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/relatorios-kpis/design.md`
-**Status**: In Progress — Batch A (T1–T6) done, Batch B (T7–T13) pendente.
+**Status**: Done — T1–T13 implementadas e commitadas. Verificação independente a seguir.
+
+**Batch B — T7–T13 (frontend): ✅ Done.**
+- T7 `6e6a186` · T8 `7e001c5` · T9 `9828847` · T10 `41193d2` · T11 `38ccc3e` · T12 `12777f1` · T13 `41d108f`
+- Frontend: 344→377 testes (todos passam). Backend seguiu 608/609 (mesmo flake pré-existente e não relacionado). Build (`vite build`) confirma code-splitting: `ReportsTab` vira chunk lazy separado (`ReportsTab-*.js`, ~108kB gzip), não pesa o bundle principal. Lint 0 erros (só warnings pré-existentes). `tsc --noEmit` backend: só os 5 erros pré-existentes de auth.
+- Deviations do design: (1) `StageDurationsChart` usa barras em CSS puro, não Recharts — precisão em distinguir `null` ("—", sem barra) de `0` real (barra + "0,0 d") não é natural com `<Bar>` do Recharts; (2) loading da `ReportsTab` usa texto inline (padrão já usado em `JobDetailModal`), não o componente `Loading` global — este é um overlay fullscreen que esconderia a sidebar, regressão de UX para um loading dentro de uma aba; (3) `reports.routes.ts` constrói o schema Zod por request (`buildReportsKpisQuerySchema()` a cada `GET`), não uma instância única de módulo como o design sugeriu — uma instância fixa congelaria o default de "hoje" no horário em que o processo subiu.
+- Um teste pré-existente (`dashboard.layout.test.tsx`) tinha `toHaveLength(4)` hardcoded para o nº de abas da tab bar mobile; atualizado para `5` (consequência direta e mecânica de T13, não uma mudança de comportamento).
 
 **Batch A — T1–T6 (backend): ✅ Done.**
 - T1 `747b532` · T2 `85df508` · T3 `7ee0761` · T4 `e1e3cca` · T5 `f856f37` · T6 `15316dd`
