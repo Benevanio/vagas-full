@@ -60,14 +60,22 @@ describe("server entry", () => {
     });
   });
 
-  it("inicializa app e chama listen", async () => {
-    await importServerEntry();
+  it(
+    "inicializa app e chama listen",
+    async () => {
+      await importServerEntry();
 
-    expect(mocks.createJobsApiApp).toHaveBeenCalledTimes(1);
-    expect(mocks.set).toHaveBeenCalledWith("trust proxy", 1);
-    expect(mocks.listen).toHaveBeenCalled();
-    expect(mocks.listen.mock.calls[0][0]).toBe(3100);
-  });
+      expect(mocks.createJobsApiApp).toHaveBeenCalledTimes(1);
+      expect(mocks.set).toHaveBeenCalledWith("trust proxy", 1);
+      expect(mocks.listen).toHaveBeenCalled();
+      expect(mocks.listen.mock.calls[0][0]).toBe(3100);
+    },
+    // Primeiro teste do arquivo: paga o custo do vi.resetModules() + reimport
+    // completo de server.ts (conexões reais de Valkey/ioredis no boot). Sob a
+    // suíte inteira (600+ testes concorrentes) isso passa de 5s por contenção
+    // de CPU, mesmo passando sempre isolado — não é lógica quebrada, é timing.
+    15000,
+  );
 
   it("usa porta padrão quando PORT não definido", async () => {
     delete process.env.PORT;
