@@ -116,6 +116,25 @@ describe("AppRoutes", () => {
     expect(screen.getByText("New dashboard route")).toBeInTheDocument();
   });
 
+  it("redireciona /relatorios para login quando não há usuário (mesmo guard das outras seções)", () => {
+    renderRoute("/relatorios");
+
+    expect(screen.getByText("Login route")).toBeInTheDocument();
+    expect(screen.queryByText("New dashboard route")).not.toBeInTheDocument();
+  });
+
+  it("renderiza o shell autenticado em /relatorios quando há usuário", () => {
+    authState.value = {
+      user: { id: "1", email: "otavio@example.com" },
+      isLoading: false,
+    };
+
+    renderRoute("/relatorios");
+
+    expect(screen.getByText("Dashboard shell")).toBeInTheDocument();
+    expect(screen.getByText("New dashboard route")).toBeInTheDocument();
+  });
+
   it("mostra loading em rota pública enquanto a sessão está carregando", () => {
     authState.value = {
       user: null,

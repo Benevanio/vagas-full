@@ -48,6 +48,7 @@ export function AppRoutes() {
       <Route path="/dashboard" element={dashboardElement} />
       <Route path="/vagas" element={dashboardElement} />
       <Route path="/mentoria" element={dashboardElement} />
+      <Route path="/relatorios" element={dashboardElement} />
       <Route path="/perfil" element={dashboardElement} />
       <Route path="/ajuda" element={dashboardElement} />
       <Route
