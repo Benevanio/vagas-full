@@ -63,6 +63,7 @@ Módulos principais:
 - `src/modules/users` — perfis e preferências do usuário (`UsersController`, `UsersService`).
 - `src/modules/savedJobs` — CRUD de vagas salvas (`SavedJobsController`, `SavedJobsService`).
 - `src/modules/notifications` — notificações do usuário autenticado.
+- `src/modules/reports` — KPIs agregados de candidatura do usuário (`ReportsController`, `ReportsService`, `ReportsRepository`, núcleo puro `computeKpis`).
 - `src/modules/jobs` — busca, parsing de filtros, fallback pós-filtro e regras de matching/score de vagas.
 - `src/modules/admin` — usuários admin, permissões, scrapers, auditoria, dashboard e observabilidade.
 
@@ -194,6 +195,9 @@ Base: `/`
   - `PATCH /saved-jobs/:id` — atualiza vaga salva.
   - `DELETE /saved-jobs/:id` — remove vaga salva.
 
+- Relatórios (KPIs do candidato)
+  - `GET /reports/kpis?from=YYYY-MM-DD&to=YYYY-MM-DD` — agrega, sobre `saved_jobs`/`application_events` do usuário autenticado: `weeklyApplications` (candidaturas por semana ISO, só semanas com ≥1 candidatura), `interviewRate` (`{ value, insufficientData }`, calculada sobre as candidaturas do período) e `stageDurations` (média em dias de `savedToApplied`, `appliedToInterviewing`, `interviewingToOutcome`; `null` sem transição concluída). `from`/`to` são opcionais (default: últimos 90 dias, ancorados a `00:00:00.000Z`/`23:59:59.999Z`); `from` posterior a `to` retorna `400`. Sem dado no período retorna `200` com estruturas zeradas — ausência de candidatura não é erro.
+
 - Admin
   - `GET /admin/users` — lista usuários.
   - `GET /admin/users/:id` — obtém usuário por id.
@@ -212,7 +216,7 @@ Base: `/`
 
 Observações de segurança nas rotas:
 
-- Rotas sob `/users`, `/jobs`, `/keywords`, `/notifications`, `/saved-jobs` e `/admin` usam `withSession` + `requireAuth` (quando aplicável).
+- Rotas sob `/users`, `/jobs`, `/keywords`, `/notifications`, `/saved-jobs`, `/reports` e `/admin` usam `withSession` + `requireAuth` (quando aplicável).
 - `auth` usa `withSession` para armazenar OAuth state e criar sessão.
 
 ## Variáveis de ambiente importantes
