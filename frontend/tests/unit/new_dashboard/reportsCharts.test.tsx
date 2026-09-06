@@ -14,7 +14,9 @@ vi.mock("recharts", async (importOriginal) => {
   };
 });
 
+import { InterviewRateChart } from "@/domains/new_dashboard/components/reports/InterviewRateChart";
 import { PeriodSelector } from "@/domains/new_dashboard/components/reports/PeriodSelector";
+import { StageDurationsChart } from "@/domains/new_dashboard/components/reports/StageDurationsChart";
 import { WeeklyApplicationsChart } from "@/domains/new_dashboard/components/reports/WeeklyApplicationsChart";
 
 describe("PeriodSelector", () => {
@@ -64,5 +66,69 @@ describe("WeeklyApplicationsChart", () => {
 
     expect(screen.getByText("Sem dados no período.")).toBeInTheDocument();
     expect(container.querySelector("svg.recharts-surface")).toBeNull();
+  });
+});
+
+describe("InterviewRateChart", () => {
+  it("com dados, mostra o donut e o valor central em % (KPI-12)", () => {
+    const { container } = render(
+      <InterviewRateChart rate={{ value: 67, insufficientData: false }} />,
+    );
+
+    expect(container.querySelector("svg.recharts-surface")).not.toBeNull();
+    expect(screen.getByText("67%")).toBeInTheDocument();
+  });
+
+  it("com insufficientData, mostra empty state em vez do donut (KPI-14)", () => {
+    const { container } = render(
+      <InterviewRateChart rate={{ value: 0, insufficientData: true }} />,
+    );
+
+    expect(screen.getByText("Sem dados no período.")).toBeInTheDocument();
+    expect(container.querySelector("svg.recharts-surface")).toBeNull();
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
+  });
+});
+
+describe("StageDurationsChart", () => {
+  const durations = {
+    savedToApplied: 2.5,
+    appliedToInterviewing: null,
+    interviewingToOutcome: 0,
+  };
+
+  it("renderiza as 3 etapas com seus rótulos (KPI-12)", () => {
+    render(<StageDurationsChart durations={durations} />);
+
+    expect(screen.getByText("Vaga salva → Candidatura")).toBeInTheDocument();
+    expect(screen.getByText("Candidatura → Entrevista")).toBeInTheDocument();
+    expect(screen.getByText("Entrevista → Desfecho")).toBeInTheDocument();
+  });
+
+  it("etapa com valor number mostra o valor formatado e a barra (KPI-12)", () => {
+    render(<StageDurationsChart durations={durations} />);
+
+    expect(screen.getByText("2,5 d")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("stage-bar-savedToApplied"),
+    ).toBeInTheDocument();
+  });
+
+  it("etapa null mostra '—' e nenhuma barra, nunca '0' (KPI-16)", () => {
+    render(<StageDurationsChart durations={durations} />);
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("stage-bar-appliedToInterviewing"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("etapa com duração real 0 mostra '0,0 d' e a barra, não '—' (KPI-16)", () => {
+    render(<StageDurationsChart durations={durations} />);
+
+    expect(screen.getByText("0,0 d")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("stage-bar-interviewingToOutcome"),
+    ).toBeInTheDocument();
   });
 });
