@@ -277,14 +277,19 @@ export function JobDetailModal({
           </select>
         </label>
 
-        <label className="space-y-2 block">
-          <span className="text-xs font-bold uppercase text-muted-foreground">Notas</span>
-          <textarea
-            value={job.notes}
-            onChange={(event) => onNotesChange(job.id, event.target.value)}
-            className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
-          />
-        </label>
+        <div className="space-y-2">
+          <label className="space-y-2 block">
+            <span className="text-xs font-bold uppercase text-muted-foreground">Notas</span>
+            <textarea
+              value={job.notes}
+              onChange={(event) => onNotesChange(job.id, event.target.value)}
+              className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Suas notas são salvas automaticamente ao fechar este detalhe.
+          </p>
+        </div>
 
         {isTracked ? (
           <section className="space-y-2" aria-labelledby="timeline-title">

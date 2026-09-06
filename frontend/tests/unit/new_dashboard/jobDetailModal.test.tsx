@@ -86,6 +86,23 @@ describe("JobDetailModal — informações principais (JDM-01, JDM-02)", () => {
   });
 });
 
+describe("JobDetailModal — feedback de salvamento das notas (JDM-07)", () => {
+  it("mostra um texto indicando que as notas são salvas ao fechar o modal", () => {
+    render(
+      <JobDetailModal
+        job={job()}
+        onClose={noop}
+        onStatusChange={noop}
+        onNotesChange={noop}
+      />,
+    );
+
+    expect(
+      screen.getByText(/salvas automaticamente ao fechar/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("JobDetailModal — detalhes adicionais sem duplicar dado (JDM-04, JDM-05, JDM-06)", () => {
   it("omite do bloco de detalhes adicionais campos já representados nos tiles principais", () => {
     render(
