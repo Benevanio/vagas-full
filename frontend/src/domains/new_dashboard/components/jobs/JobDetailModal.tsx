@@ -73,6 +73,24 @@ function timelineMetadataText(metadata: Record<string, unknown> | null) {
     .join(" • ");
 }
 
+/** Tile rotulado para uma informação principal (local, modalidade, nível, fonte, salário, match). */
+function InfoTile({
+  label,
+  value,
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <span className="text-xs font-bold uppercase text-muted-foreground">{label}</span>
+      <p className={`mt-1 text-sm font-semibold ${valueClassName}`}>{value}</p>
+    </div>
+  );
+}
+
 export function JobDetailModal({
   job,
   onClose,
@@ -144,36 +162,25 @@ export function JobDetailModal({
       }
     >
       <div className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-md border border-border bg-background p-3">
-            <span className="text-xs font-bold uppercase text-muted-foreground">Local</span>
-            <p className="mt-1 text-sm font-semibold">{job.location}</p>
-          </div>
-          <div className="rounded-md border border-border bg-background p-3">
-            <span className="text-xs font-bold uppercase text-muted-foreground">Salário</span>
-            <p className="mt-1 text-sm font-semibold">{job.salary}</p>
-          </div>
-          <div className="rounded-md border border-border bg-background p-3">
-            <span className="text-xs font-bold uppercase text-muted-foreground">Match</span>
-            <p className="mt-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">
-              {job.matchScore}%
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${jobStatusClasses[job.status]}`}>
+        <div>
+          <span
+            className={`rounded-full border px-3 py-1 text-xs font-bold ${jobStatusClasses[job.status]}`}
+          >
             {jobStatuses[job.status]}
           </span>
-          <span className="rounded-full border border-border px-3 py-1 text-xs font-bold text-muted-foreground">
-            {job.type}
-          </span>
-          <span className="rounded-full border border-border px-3 py-1 text-xs font-bold text-muted-foreground">
-            {job.level}
-          </span>
-          <span className="rounded-full border border-border px-3 py-1 text-xs font-bold text-muted-foreground">
-            {job.source}
-          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <InfoTile label="Local" value={job.location} />
+          <InfoTile label="Modalidade" value={job.type} />
+          <InfoTile label="Nível" value={job.level} />
+          <InfoTile label="Fonte" value={job.source} />
+          <InfoTile label="Salário" value={job.salary} />
+          <InfoTile
+            label="Match"
+            value={`${job.matchScore}%`}
+            valueClassName="text-emerald-600 dark:text-emerald-400"
+          />
         </div>
 
         <div className="space-y-2">
