@@ -90,16 +90,24 @@ export class EmailChangeService {
     const now = new Date();
 
     await this.database.transaction(async (tx) => {
-      const request = await tx.query.emailChangeRequests.findFirst({
-        where: eq(emailChangeRequests.tokenHash, tokenHash),
-      });
+      // Reivindica a solicitação de forma atômica: a própria condição do
+      // UPDATE revalida que ela continua ativa. Ler e só depois marcar como
+      // confirmada abria janela para uma nova solicitação invalidar o token
+      // no meio do caminho e, mesmo assim, o token antigo efetivar a troca.
+      const [request] = await tx
+        .update(emailChangeRequests)
+        .set({ confirmedAt: now })
+        .where(
+          and(
+            eq(emailChangeRequests.tokenHash, tokenHash),
+            isNull(emailChangeRequests.invalidatedAt),
+            isNull(emailChangeRequests.confirmedAt),
+            gt(emailChangeRequests.expiresAt, now),
+          ),
+        )
+        .returning();
 
-      if (
-        !request ||
-        request.invalidatedAt ||
-        request.confirmedAt ||
-        request.expiresAt <= now
-      ) {
+      if (!request) {
         throw AppError.validation("Token inválido ou expirado.");
       }
 
@@ -144,11 +152,6 @@ export class EmailChangeService {
           updatedAt: now,
         })
         .where(eq(credentials.userId, request.userId));
-
-      await tx
-        .update(emailChangeRequests)
-        .set({ confirmedAt: now })
-        .where(eq(emailChangeRequests.id, request.id));
     });
   }
 }
