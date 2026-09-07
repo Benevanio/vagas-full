@@ -3,6 +3,9 @@ import { db } from "../../db/client";
 import { userSessions } from "../../db/schema";
 import { sessionTtlSeconds } from "../../lib/session";
 
+/** Intervalo mínimo entre atualizações de `lastSeenAt` (5 minutos). */
+const LAST_SEEN_REFRESH_MS = 5 * 60 * 1000;
+
 export type SessionMetadata = {
   userAgent?: string;
   ipAddress?: string;
@@ -63,10 +66,20 @@ export class SessionService {
     });
     if (!session) return false;
 
-    await db
-      .update(userSessions)
-      .set({ lastSeenAt: new Date() })
-      .where(eq(userSessions.id, session.id));
+    // `lastSeenAt` a cada request transformava qualquer navegação em escrita
+    // no banco. O campo só precisa ser aproximado, então só atualiza depois
+    // de um intervalo mínimo desde o último registro.
+    const now = new Date();
+    const desatualizado =
+      now.getTime() - session.lastSeenAt.getTime() >= LAST_SEEN_REFRESH_MS;
+
+    if (desatualizado) {
+      await db
+        .update(userSessions)
+        .set({ lastSeenAt: now })
+        .where(eq(userSessions.id, session.id));
+    }
+
     return true;
   }
 

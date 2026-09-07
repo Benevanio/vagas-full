@@ -52,12 +52,27 @@ describe("SessionService", () => {
     await expect(service.isActive("user-1", "session-1")).resolves.toBe(false);
   });
 
-  it("atualiza o último acesso de uma sessão válida", async () => {
-    mocks.findFirst.mockResolvedValue({ id: "session-1" });
+  it("atualiza o último acesso quando já passou do intervalo mínimo", async () => {
+    mocks.findFirst.mockResolvedValue({
+      id: "session-1",
+      lastSeenAt: new Date(Date.now() - 10 * 60 * 1000),
+    });
+
     await expect(service.isActive("user-1", "session-1")).resolves.toBe(true);
     expect(mocks.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ lastSeenAt: expect.any(Date) }),
     );
+  });
+
+  it("não grava lastSeenAt quando a sessão foi vista há pouco", async () => {
+    mocks.findFirst.mockResolvedValue({
+      id: "session-1",
+      lastSeenAt: new Date(Date.now() - 30 * 1000),
+    });
+
+    // Sem esse corte, toda requisição autenticada vira uma escrita no banco.
+    await expect(service.isActive("user-1", "session-1")).resolves.toBe(true);
+    expect(mocks.updateSet).not.toHaveBeenCalled();
   });
 
   it("lista apenas as sessões ativas e identifica a atual", async () => {
