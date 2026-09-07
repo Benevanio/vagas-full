@@ -4,8 +4,6 @@ import type {
   JobStatus,
   JobType,
   Mentor,
-  Message,
-  Notification,
   SearchPreferences,
   UserProfile,
 } from "../types";
@@ -146,44 +144,6 @@ export const initialMentors: Mentor[] = [
     platformUrl: "https://discord.gg/product-design-demo",
     agenda:
       "Análise de fluxo de produto, refinamento de protótipos no Figma, narrativa de case e preparação para entrevistas de UX/UI.",
-  },
-];
-
-export const initialNotifications: Notification[] = [
-  {
-    id: 1,
-    text: "Sua candidatura para Stellar Tech foi visualizada pelo recrutador.",
-    type: "info",
-    date: "Há 10 min",
-  },
-  {
-    id: 2,
-    text: "O mentor Julio Silva aceitou o seu convite de mentoria para quarta-feira.",
-    type: "success",
-    date: "Há 2 horas",
-  },
-  {
-    id: 3,
-    text: "Vaga compatível encontrada: Desenvolvedor React na TechCorp.",
-    type: "match",
-    date: "Há 1 dia",
-  },
-];
-
-export const initialMessages: Message[] = [
-  {
-    id: 1,
-    sender: "Julio Silva (Mentor)",
-    text: "Olá Bruna! Consegue enviar seu portfólio antes do nosso papo?",
-    date: "11:15",
-    origin: "mentor",
-  },
-  {
-    id: 2,
-    sender: "RH Fintech Hub",
-    text: "Olá! Gostaríamos de marcar uma conversa técnica esta semana.",
-    date: "Ontem",
-    origin: "recruiter",
   },
 ];
 

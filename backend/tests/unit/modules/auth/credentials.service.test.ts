@@ -213,8 +213,8 @@ describe("CredentialsService", () => {
       await service.register(registerInput);
 
       expect(mocks.sendWelcome).toHaveBeenCalledWith({
-        email: mockUser.email,
-        name: mockUser.displayName,
+        email: registerInput.email,
+        name: registerInput.name,
       });
     });
 
