@@ -22,7 +22,9 @@ export function createJobFromForm(newJobData: NewJob): Job {
     tags: tags.length > 0 ? tags : ["Geral"],
     posted: "Agora mesmo",
     status: "saved",
-    jobLink: newJobData.jobLink.trim() || "#",
+    // Sem link, string vazia — mesma convenção de `toDashboardSavedJob`. O "#"
+    // anterior era truthy e fazia o detalhe oferecer "Abrir vaga" sem link.
+    jobLink: newJobData.jobLink.trim(),
     source: newJobData.source.trim() || "Manual",
     notes: newJobData.notes.trim(),
   };

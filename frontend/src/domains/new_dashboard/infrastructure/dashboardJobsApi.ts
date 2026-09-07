@@ -63,6 +63,12 @@ const ApiSavedJobEventSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   createdAt: z.string(),
 });
+const ApiApplicationNoteSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
 
 type ApiSearchJob = z.infer<typeof ApiSearchJobSchema>;
 type ApiSavedJob = z.infer<typeof ApiSavedJobSchema>;
@@ -91,6 +97,7 @@ export type SearchJobsResult = {
     hasPrev: boolean;
   };
 };
+export type ApplicationNote = z.infer<typeof ApiApplicationNoteSchema>;
 
 function normalizeComparable(value: string) {
   return value
@@ -287,6 +294,7 @@ export function toDashboardSavedJob(job: ApiSavedJob): Job {
     jobLink: job.jobLink ?? "",
     source: job.source?.trim() || "Manual",
     notes: job.notes?.trim() || "",
+    appliedAt: job.appliedAt ?? undefined,
   };
 }
 
@@ -365,7 +373,13 @@ function savedJobPayload(job: Job | NewJob, status: JobStatus = "saved") {
         : undefined,
     status,
     notes: job.notes.trim() || undefined,
-    appliedAt: "appliedAt" in job && job.appliedAt ? new Date(`${job.appliedAt}T00:00:00`) : undefined,
+    // `appliedAt` é data civil (YYYY-MM-DD). Interpretar no fuso local faz o
+    // dia mudar ao serializar para UTC em fusos positivos (ex.: UTC+3 vira o
+    // dia anterior); ancorar em UTC preserva o dia que o usuário escolheu.
+    appliedAt:
+      "appliedAt" in job && job.appliedAt
+        ? new Date(`${job.appliedAt}T00:00:00.000Z`)
+        : undefined,
   };
 }
 
@@ -377,6 +391,25 @@ export async function getDashboardSavedJobs() {
 export async function getDashboardSavedJobEvents(id: string) {
   const { data } = await api.get(`/saved-jobs/${id}/events`);
   return z.array(ApiSavedJobEventSchema).parse(data).map(toDashboardSavedJobEvent);
+}
+
+export async function getDashboardApplicationNotes(id: string) {
+  const { data } = await api.get(`/saved-jobs/${id}/notes`);
+  return z.array(ApiApplicationNoteSchema).parse(data);
+}
+
+export async function createDashboardApplicationNote(id: string, content: string) {
+  const { data } = await api.post(`/saved-jobs/${id}/notes`, { content });
+  return ApiApplicationNoteSchema.parse(data);
+}
+
+export async function updateDashboardApplicationNote(id: string, noteId: string, content: string) {
+  const { data } = await api.patch(`/saved-jobs/${id}/notes/${noteId}`, { content });
+  return ApiApplicationNoteSchema.parse(data);
+}
+
+export async function deleteDashboardApplicationNote(id: string, noteId: string) {
+  await api.delete(`/saved-jobs/${id}/notes/${noteId}`);
 }
 
 export async function createDashboardSavedJob(
