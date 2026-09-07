@@ -1,6 +1,6 @@
 {
-  "id": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
-  "prevId": "979ff559-fdaa-4fd2-ad0e-00019bbbd23e",
+  "id": "bb5e85b9-5287-48e2-81fc-3fd4741fec50",
+  "prevId": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -182,6 +182,33 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "application_events_user_id_created_at_id_idx": {
+          "name": "application_events_user_id_created_at_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

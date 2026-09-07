@@ -385,6 +385,7 @@ export default function NewDashboardPage() {
     changeJobNotesLocally(jobId, notes);
   };
 
+
   const handleAddJob = async (newJob: NewJob) => {
     try {
       await addTrackedJob(newJob);

@@ -142,8 +142,10 @@ await emailService.sendWelcome({ email: "usuario@exemplo.com", name: "Ana" });
 
 - `withSession` — integra `iron-session` (sessões + cookie `vagas_session`).
 - `requireAuth` — valida autenticação nas rotas que exigem usuário.
-- `securityHeaders` — cabeçalhos de segurança.
+- `securityHeaders` — cabeçalhos de segurança (ver seção **Segurança e criptografia**).
 - `cors` — configuração de CORS (opções em `src/middleware/cors.ts`).
+- `rateLimit` — limitadores de tentativas em endpoints de autenticação (`src/middleware/rateLimit.ts`).
+- `validate` — validação/normalização de `body`/`query`/`params` via schemas Zod.
 - `requestId` — correlação de requisições.
 - `metrics` — coleta de métricas Prometheus.
 - `errorHandler` — tratamento centralizado de erros.
@@ -248,10 +250,54 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 
 ## Segurança e criptografia
 
+### Autenticação e sessão
+
 - Senhas armazenadas usando Argon2 (`argon2`), com opções configuradas no serviço de credenciais.
-- Cookies de sessão `httpOnly` e `secure` quando NODE_ENV=production.
+- Cookies de sessão `httpOnly` e `secure` quando `NODE_ENV=production`.
+- Campos sensíveis de perfil usam criptografia (`ENCRYPTION_MASTER_KEY`) e hashes pesquisáveis (`SEARCH_KEY`) onde aplicável.
+
+### Rate limiting (`src/middleware/rateLimit.ts`)
+
+Limitadores por janela deslizante, com contador no Valkey quando `VALKEY_URL` está definido e fallback em memória caso contrário. Respostas incluem `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset`; ao estourar, `429` com `Retry-After`. Falha do backend de contagem responde `503` (fail-closed).
+
+| Rota | Limitadores | Chave |
+| --- | --- | --- |
+| `POST /auth/login` | `authIpRateLimiter`, `authAccountRateLimiter` | IP (hash) / e-mail (hash) |
+| `POST /auth/register` | `authIpRateLimiter`, `authRegisterRateLimiter` | IP (hash) / e-mail (hash), bucket próprio |
+
+Configuração (variável ausente usa o default; valor `≤ 0` ou não numérico também cai no default):
+
+- `AUTH_RATE_LIMIT_IP_MAX` — máximo de tentativas por IP na janela. Default `20`.
+- `AUTH_RATE_LIMIT_ACCOUNT_MAX` — máximo por e-mail na janela (login e cadastro têm buckets separados). Default `5`.
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS` — tamanho da janela em segundos. Default `900` (15 min).
+
+Pendente: aplicar rate limit ao endpoint de exportação de dados (LGPD) quando a PAV-41 for mergeada.
+
+### CORS (`src/middleware/cors.ts`)
+
+- `CORS_ALLOWED_ORIGINS` (lista separada por vírgula) é a fonte da verdade das origens permitidas.
+- Sem a env: em `production` cai apenas nas origens de produção (`*.candidate.app.br`) e loga um aviso — `localhost` **nunca** entra no allowlist de produção por fallback. Fora de produção, o fallback inclui `http://localhost:5173` e `:5174`.
+- `credentials: true`; métodos `GET, POST, PATCH, DELETE, OPTIONS`; headers `Content-Type, Authorization, X-Requested-With`; preflight cacheado por 24 h. Requisições sem header `Origin` (server-to-server, mesma origem) são permitidas.
+- Origem fora do allowlist retorna `403` com `{ code: "FORBIDDEN", message: "Origem não permitida." }`.
+
+### Cabeçalhos de resposta (`src/middleware/securityHeaders.ts`)
+
+Aplicados a todas as respostas:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — só sobre HTTPS (`req.secure`, resolvido via `trust proxy`) ou `NODE_ENV=production`. `preload` fica de fora de propósito (opt-in do time).
+- `x-powered-by` desabilitado.
+- CSP é tratada separadamente na PAV-132.
+
+### Entrada e persistência
+
+- Corpo de requisição limitado a `16kb` (`express.json({ limit: "16kb" })`).
+- Validação/normalização de entrada via schemas Zod (`middleware/validate`) nas rotas de auth, users, keywords e saved-jobs.
+- Acesso ao banco via Drizzle (queries parametrizadas — sem concatenação de SQL).
 - Índices únicos e constraints no DB (ex: email/username/keyword uniques) definidos nas tabelas Drizzle.
-- Campos sensíveis de perfil usam criptografia e hashes pesquisáveis onde aplicável.
 
 ## Integração com serviço Go
 
