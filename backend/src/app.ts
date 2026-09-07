@@ -12,6 +12,7 @@ import { authRoutes } from "./routes/auth.routes";
 import adminRoutes from "./routes/admin.routes";
 import { jobsRoutes } from "./routes/jobs.routes";
 import { keywordsRoutes } from "./routes/keywords.routes";
+import { newsletterRoutes } from "./routes/newsletter.routes";
 import { notificationsRoutes } from "./routes/notifications.routes";
 import { savedJobsRoutes } from "./routes/savedJobs.routes";
 import superAdminRoutes from "./routes/superAdmin.routes";
@@ -52,6 +53,8 @@ export function createJobsApiApp() {
 
   // Compatibilidade temporária para clientes ainda não migrados para /api/v1.
   app.use("/auth", withSession, authRoutes);
+  // Rota pública, token-autenticada — sem withSession/requireAuth (NEWSL-13/14).
+  app.use("/newsletter", newsletterRoutes);
   app.use("/users", withSession, requireAuth, userRoutes);
   app.use("/jobs", withSession, requireAuth, jobsRoutes);
   app.use("/keywords", withSession, requireAuth, keywordsRoutes);

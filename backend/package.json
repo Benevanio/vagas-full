@@ -52,6 +52,7 @@
     "react-dom": "^19.2.8",
     "redis": "^5.12.1",
     "resend": "^6.18.0",
+    "rss-parser": "^3.13.0",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "xlsx": "^0.18.5",

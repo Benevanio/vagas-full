@@ -8,6 +8,7 @@ import PrivacyPolicyPage from "@/domains/marketing/presentation/pages/PrivacyPol
 import TermsOfUsePage from "@/domains/marketing/presentation/pages/TermsOfUsePage";
 import NewDashboardPage from "@/domains/new_dashboard/NewDashboardPage";
 import NewDashboardLayout from "@/domains/new_dashboard/layout";
+import UnsubscribePage from "@/domains/newsletter/presentation/pages/UnsubscribePage";
 import Loading from "@/shared/ui/Loading";
 import { Navigate, Route, Routes } from "react-router-dom";
 
@@ -67,6 +68,10 @@ export function AppRoutes() {
         }
       />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route
+        path="/newsletter/unsubscribe"
+        element={<UnsubscribePage />}
+      />
       <Route
         path="/politica-de-privacidade"
         element={<PrivacyPolicyPage />}

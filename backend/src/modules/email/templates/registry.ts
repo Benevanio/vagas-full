@@ -1,6 +1,7 @@
 import { render } from "@react-email/render";
 import * as React from "react";
 import { AppError } from "../../../lib/errors";
+import { Newsletter, NewsletterProps } from "./newsletter";
 import { Welcome, WelcomeProps } from "./welcome";
 
 /**
@@ -11,6 +12,10 @@ const templates = {
   welcome: {
     subject: "Bem-vindo ao Candidate",
     component: Welcome,
+  },
+  newsletter: {
+    subject: "Suas vagas da semana no Candidate",
+    component: Newsletter,
   },
 } satisfies Record<
   string,
@@ -24,6 +29,7 @@ export type TemplateName = keyof typeof templates;
  */
 export interface TemplateDataMap {
   welcome: WelcomeProps;
+  newsletter: NewsletterProps;
 }
 
 export function isTemplate(name: string): name is TemplateName {
