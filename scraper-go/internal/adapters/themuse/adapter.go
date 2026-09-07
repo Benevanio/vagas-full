@@ -14,13 +14,13 @@ import (
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters/adapterutil"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 )
 
 const (
-	theMuseFeedTTL           = 30 * time.Minute
-	theMuseDetailConcurrency = 10
-	theMuseDetailTimeout     = 15 * time.Second
-	defaultTheMuseMaxPages   = 50
+	theMuseFeedTTL         = 30 * time.Minute
+	theMuseDetailTimeout   = 15 * time.Second
+	defaultTheMuseMaxPages = 50
 )
 
 var (
@@ -48,6 +48,13 @@ func NewTheMuse() *TheMuseAdapter {
 }
 
 func (a *TheMuseAdapter) SourceName() string { return "The Muse" }
+
+func (a *TheMuseAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderTheMuse,
+		Mode:     ports.DiscoveryCatalog,
+	}
+}
 
 func buildTheMuseURL(page int) string {
 	u, _ := url.Parse("https://www.themuse.com/api/public/jobs")
@@ -121,6 +128,9 @@ func (a *TheMuseAdapter) Search(ctx context.Context, keyword string, req domain.
 	if err != nil {
 		return nil, err
 	}
+	if cause := context.Cause(ctx); cause != nil {
+		return nil, cause
+	}
 
 	matches := make([]domain.Job, 0)
 	for _, job := range feed {
@@ -133,6 +143,40 @@ func (a *TheMuseAdapter) Search(ctx context.Context, keyword string, req domain.
 	}
 
 	return matches, nil
+}
+
+func (a *TheMuseAdapter) SearchCatalog(
+	ctx context.Context,
+	keywords []string,
+	req domain.ScrapeRequest,
+) ([]domain.Job, error) {
+	feed, err := a.fetchFeed(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	jobs := make([]domain.Job, 0, len(feed))
+	for _, job := range feed {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+
+		matchedKeywords := make([]string, 0, len(keywords))
+		for _, keyword := range keywords {
+			keyword = strings.TrimSpace(keyword)
+			if keyword != "" && theMuseMatchesKeyword(job, keyword) {
+				matchedKeywords = append(matchedKeywords, keyword)
+			}
+		}
+		if len(matchedKeywords) == 0 {
+			continue
+		}
+
+		job.Keyword = matchedKeywords[0]
+		job.Keywords = matchedKeywords
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
 }
 
 func (a *TheMuseAdapter) fetchFeed(ctx context.Context, req domain.ScrapeRequest) ([]domain.Job, error) {
@@ -195,15 +239,16 @@ func (a *TheMuseAdapter) fetchFeed(ctx context.Context, req domain.ScrapeRequest
 		allJobs = append(allJobs, jobs...)
 
 		if page < maxPages {
-			select {
-			case <-ctx.Done():
-				return allJobs, nil
-			case <-time.After(waitBetween):
+			if err := adapterutil.Wait(ctx, waitBetween); err != nil {
+				return nil, err
 			}
 		}
 	}
 
 	allJobs = a.enrichJobs(ctx, allJobs)
+	if cause := context.Cause(ctx); cause != nil {
+		return nil, cause
+	}
 
 	a.mu.Lock()
 	a.cacheID = cacheID
@@ -266,10 +311,10 @@ func (a *TheMuseAdapter) enrichJobs(ctx context.Context, jobs []domain.Job) []do
 	enriched := make([]domain.Job, len(jobs))
 	copy(enriched, jobs)
 
-	sem := make(chan struct{}, theMuseDetailConcurrency)
-	var wg sync.WaitGroup
-
 	for i := range enriched {
+		if context.Cause(ctx) != nil {
+			break
+		}
 		id := strings.TrimSpace(enriched[i].ID)
 		if id == "" || strings.HasPrefix(id, "http://") || strings.HasPrefix(id, "https://") {
 			continue
@@ -283,29 +328,20 @@ func (a *TheMuseAdapter) enrichJobs(ctx context.Context, jobs []domain.Job) []do
 			continue
 		}
 
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(index int, jobID string) {
-			defer wg.Done()
-			defer func() { <-sem }()
+		detailCtx, cancel := context.WithTimeout(ctx, theMuseDetailTimeout)
+		detail, err := a.fetchDetail(detailCtx, id)
+		cancel()
+		if err != nil {
+			continue
+		}
 
-			detailCtx, cancel := context.WithTimeout(ctx, theMuseDetailTimeout)
-			defer cancel()
+		a.mu.Lock()
+		a.details[id] = detail
+		a.mu.Unlock()
 
-			detail, err := a.fetchDetail(detailCtx, jobID)
-			if err != nil {
-				return
-			}
-
-			a.mu.Lock()
-			a.details[jobID] = detail
-			a.mu.Unlock()
-
-			enriched[index] = mergeTheMuseJob(enriched[index], detail)
-		}(i, id)
+		enriched[i] = mergeTheMuseJob(enriched[i], detail)
 	}
 
-	wg.Wait()
 	return enriched
 }
 

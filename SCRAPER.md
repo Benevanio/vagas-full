@@ -197,16 +197,19 @@ No Compose da raiz, a porta `8081` fica exposta apenas na rede interna `vagas-ne
 
 ### Limites globais de execução
 
-O scraper possui um orçamento global de concorrência por execução controlado por `SCRAPER_MAX_CONCURRENCY`.
+O scraper possui um orçamento global e limites por provider controlados pelo scheduler do pipeline:
 
-- Padrão interno: `12`, usado quando a variável não está definida.
-- Valor válido: inteiro positivo.
-- Valores inválidos explícitos (`""`, `0`, negativo ou não numérico) fazem a aplicação falhar no startup, sem fallback silencioso.
+- `SCRAPER_MAX_CONCURRENCY`: teto global. Padrão interno `12`.
+- `SCRAPER_PROVIDER_MAX_CONCURRENCY`: limite padrão por provider. Padrão interno `2`.
+- `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES`: overrides separados por vírgula no formato `provider=limite`, por exemplo `linkedin=1,gupy=3`.
+- IDs aceitos nos overrides: `linkedin`, `adzuna`, `themuse`, `gupy`, `inhire`, `jooble`, `greenhouse` e `lever`.
+- Limites devem ser inteiros positivos e não podem superar o teto global. Provider desconhecido, entrada malformada ou duplicada impede o startup.
+- Valores inválidos explícitos nas variáveis numéricas (`""`, `0`, negativo ou não numérico) fazem a aplicação falhar no startup, sem fallback silencioso; overrides vazios significam que nenhum provider foi sobrescrito.
 - Cron e `POST /admin/scrape` usam o limite global configurado.
 - `POST /scrape` preserva o contrato atual: quando `maxConcurrency` não é informado, ou vem como `0`/negativo, usa o limite global; quando vem positivo abaixo do teto, usa o valor solicitado; quando vem acima do teto, usa o teto global.
-- A concorrência efetiva é calculada antes da chave de cache e é o mesmo valor usado pelo pipeline, logs e semáforo.
-
-O semáforo global atual é criado uma vez por chamada do pipeline. O lock distribuído abaixo impede que duas execuções mantenham semáforos independentes ao mesmo tempo; limites específicos por provider permanecem para uma sub-issue posterior.
+- A concorrência global efetiva continua fazendo parte da chave de cache. Limites por provider são parâmetros operacionais e não alteram a chave.
+- Cada tarefa adquire primeiro o permit do provider e depois o permit global; o limite efetivo do provider é sempre o menor entre seu limite configurado e o global da requisição.
+- O lock distribuído abaixo impede que duas execuções mantenham orçamentos independentes ao mesmo tempo.
 
 ### Lock distribuído de execução
 
@@ -302,7 +305,9 @@ Fluxo principal:
 2. Verifica cache (`internal/cache`). Se encontrado, retorna resultado cacheado.
 3. Caso contrário, executa `pipeline.ScrapeAllSources` que:
    - Recebe a lista de fontes já montada pelo servidor/registry.
-   - Cria uma tarefa por fonte batch (`SearchBatch`) ou uma tarefa por keyword para fontes sem batch, sempre respeitando `MaxConcurrency`.
+   - Valida o ID, o modo de descoberta e a interface declarada por cada fonte antes de iniciar workers.
+   - Produz tarefas sob demanda em round-robin para uma fila limitada, consumida por um conjunto fixo de workers.
+   - Cria uma tarefa por keyword no modo `keyword`, uma tarefa com o conjunto controlado no modo `batch` e uma tarefa por catálogo/instância no modo `catalog`.
    - Cada adaptador realiza requisições HTTP específicas, parseia HTML/JSON quando necessário e retorna `domain.Job`.
    - Agrega resultados e aplica deduplicação (`dedup.DedupeJobs`).
    - Classifica vagas por família, tecnologias e senioridade antes da indexação.
@@ -311,15 +316,17 @@ Fluxo principal:
 
 Concorrência e resiliência:
 
-- Semáforos por adaptador (ex.: LinkedIn usa um semáforo de 5 simultâneos para proteção).
-- Orçamento global por execução via `SCRAPER_MAX_CONCURRENCY`, aplicado antes do cache e do pipeline.
+- Orçamento global e por provider aplicado pelo pipeline; adapters não criam fan-out concorrente independente.
+- Fila de tarefas limitada a duas vezes o teto global e workers fixos evitam materializar `adapters × keywords` ou abrir uma goroutine por tarefa.
+- O produtor round-robin evita que um provider com muitas instâncias monopolize a fila.
+- Cancelamento interrompe produção, espera por permits, paginação, retries e requisições HTTP; tarefas novas não começam após a perda do contexto/lock.
 - Tratamento de status 429 com backoff; aborta apenas a keyword afetada em caso de falhas persistentes.
 - Uso de `inflight` para evitar que múltiplas requisições idênticas disparem scrapes simultâneos.
 - Slots rotativos reduzem o número de keywords/queries por rodada em fontes caras, preservando cobertura progressiva em execuções futuras.
 
 ## Adaptadores
 
-Cada adaptador em `internal/adapters/<fonte>` implementa a porta `ports.JobSource` com `SourceName()` e `Search(ctx, keyword, req)`. Quando a fonte consegue buscar várias keywords em uma chamada/lote, ela também pode implementar `ports.BatchJobSource`.
+Cada adaptador em `internal/adapters/<fonte>` implementa `ports.JobSource` e declara `ProviderID` e `DiscoveryMode`. Fontes `batch` implementam `ports.BatchJobSource`; fontes `catalog` implementam `ports.CatalogJobSource`. Fontes legadas sem capacidade explícita usam o fallback `keyword`.
 Implementações incluem:
 
 - `internal/adapters/linkedin` — busca via endpoint público `jobs-guest` do LinkedIn; parsing com `goquery`.
@@ -334,9 +341,10 @@ Implementações incluem:
 - Adzuna: habilitado quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` existem; `SearchBatch` usa slot rotativo. Defaults atuais: 5 páginas por keyword e 30 keywords por rodada.
 - Gupy: habilitado com `GUPY_ENABLED=true`; usa queries expandidas, descoberta por termos amplos e sweep opcional. O default atual limita o sweep a offset 10000 e processa 60 queries por rodada.
 - Jooble: habilitado com `JOOBLE_API_KEY`; usa cota diária, slot rotativo e cadência de 12h.
-- Greenhouse: habilitado com `GREENHOUSE_ENABLED=true`; cria um adapter por empresa listada em `internal/interfaces/greenhouseCompanies.json`.
-- Lever: habilitado com `LEVER_ENABLED=true`; cria adapters a partir de `internal/interfaces/leverCompanies.json`.
-- InHire: habilitado com `INHIRE_ENABLED=true`; consulta tenants de `internal/interfaces/inhireTenants.json` e só enriquece detalhes quando `INHIRE_ENRICH_DETAILS=true`.
+- Greenhouse: habilitado com `GREENHOUSE_ENABLED=true`; cria um catálogo por empresa listada em `internal/interfaces/greenhouseCompanies.json`, consulta cada catálogo uma vez e agrega todas as keywords correspondentes sem duplicar a vaga.
+- Lever: habilitado com `LEVER_ENABLED=true`; cria catálogos por empresa a partir de `internal/interfaces/leverCompanies.json`.
+- The Muse: consulta o catálogo uma vez por execução e filtra todas as keywords localmente.
+- InHire: habilitado com `INHIRE_ENABLED=true`; consulta tenants serialmente e só enriquece detalhes quando `INHIRE_ENRICH_DETAILS=true`.
 
 Boas práticas nos adaptadores:
 
@@ -371,12 +379,14 @@ docker compose \
   config
 ```
 
-Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12`, `GOMAXPROCS=2`, `GOMEMLIMIT=1500MiB`, `cpus: 1.5` e `mem_limit: 2g`.
+Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12`, `SCRAPER_PROVIDER_MAX_CONCURRENCY=2`, `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES=""`, `GOMAXPROCS=2`, `GOMEMLIMIT=1500MiB`, `cpus: 1.5` e `mem_limit: 2g`.
 
 ## Variáveis de ambiente importantes
 
 - `VALKEY_URL` — conexão Redis/Valkey. Em Docker Compose, use `redis://valkey:6379/0`; em execução local fora do Docker, use uma URL acessível pelo host, por exemplo `redis://localhost:6379/0`.
 - `SCRAPER_MAX_CONCURRENCY` — teto global de concorrência por execução. Padrão: `12`. Configuração explícita inválida impede a inicialização.
+- `SCRAPER_PROVIDER_MAX_CONCURRENCY` — limite padrão por provider. Padrão: `2`. Deve ser positivo e não pode superar `SCRAPER_MAX_CONCURRENCY`.
+- `SCRAPER_PROVIDER_CONCURRENCY_OVERRIDES` — lista opcional `provider=limite`, separada por vírgulas. Vazio significa nenhum override; entrada inválida, duplicada, desconhecida ou acima do teto global impede a inicialização.
 - `SCRAPER_RUN_LOCK_TTL` — duração do lock distribuído. Padrão: `120s`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_TTL-120s}` (mesmo padrão fail-fast de `SCRAPER_MAX_CONCURRENCY`).
 - `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}`.
 - `GOMAXPROCS` — limite efetivo de threads executando código Go simultaneamente. Valor inicial no Compose: `2`.
@@ -389,7 +399,7 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 - `GUPY_RAW_DISCOVERY_ENABLED` — adiciona queries amplas de tecnologia na Gupy.
 - `GUPY_FULL_SWEEP_ENABLED` / `GUPY_FULL_REMOTE_SWEEP_ENABLED` — controla sweeps amplos na Gupy.
 - `GUPY_QUERY_LIMIT` — limita quantas queries expandidas da Gupy rodam por execução. Padrão: `60`.
-- `INHIRE_ENABLED`, `INHIRE_TENANTS_FILE`, `INHIRE_ENRICH_DETAILS`, `INHIRE_DETAILS_MODE`, `INHIRE_DETAILS_CONCURRENCY`, `INHIRE_DETAILS_TIMEOUT_MS` — controlam fonte e enriquecimento InHire.
+- `INHIRE_ENABLED`, `INHIRE_TENANTS_FILE`, `INHIRE_ENRICH_DETAILS`, `INHIRE_DETAILS_MODE`, `INHIRE_DETAILS_TIMEOUT_MS` — controlam fonte e enriquecimento InHire. `INHIRE_DETAILS_CONCURRENCY` foi removida; detalhes seguem o orçamento do provider.
 - `GREENHOUSE_ENABLED`, `GREENHOUSE_COMPANIES_FILE` — controlam fonte Greenhouse.
 - `LEVER_ENABLED`, `LEVER_COMPANIES_FILE`, `LEVER_INCLUDE_ALL_JOBS` — controlam fonte Lever.
 - Configurações de logging, quota e performance podem ser definidas via `.env`.
@@ -397,8 +407,9 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 ## Observações operacionais
 
 - Projetado para rodar frequentemente; use caching e indexação para reduzir chamadas repetidas.
-- Monitorar erros 429 e ajustar `WaitBetweenSearchesMs` / semáforos por adaptador.
+- Monitorar erros 429 e ajustar `WaitBetweenSearchesMs` e os limites globais/por provider.
 - Verifique logs estruturados (slog JSON) e `/metrics` para métricas de sucesso/falhas por adaptador.
+- O log `scraper concurrency budget` registra uma vez por execução o teto global, o default por provider e os overrides; `scraper provider execution summary` registra modo, tarefas produzidas/concluídas/canceladas, erros, timeouts e duração agregada.
 - Logs `scraper run lock acquired`, `scraper execution skipped`, `scraper run lock lost` e `scraper run lock released` identificam `source` e `run_id`.
 
 ### Verificação operacional do lock

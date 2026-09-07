@@ -14,6 +14,7 @@
 [TESTING](TESTING.md) |
 [CONTRIBUTING](contribuition.md) |
 [ESCOPO](ESCOPO.md) |
+[SECURITY](SECURITY.md) |
 [Frontend](frontend/README.md) |
 [Frontend Architecture](frontend/ARCHITECTURE.md) |
 [Front Admin](front_admin/README.md)
@@ -325,6 +326,18 @@ Admin:
 Swagger:
 
 - GET /docs
+
+### Versionamento da API
+
+Os endpoints públicos usam o prefixo `/api/v1` (por exemplo,
+`GET /api/v1/jobs/search`). A interface Swagger está disponível em `GET /docs`
+e documenta essa versão. As rotas sem prefixo permanecem temporariamente por
+compatibilidade com clientes existentes.
+
+Para atualizar a documentação, altere os schemas e rotas em
+`backend/src/swagger.ts` ou as anotações `@swagger` das rotas e reinicie o
+backend. Em desenvolvimento, acesse a interface em
+`http://localhost:3001/docs`.
 
 ## Docker (infra + aplicação)
 

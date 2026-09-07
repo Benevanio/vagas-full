@@ -2,7 +2,10 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/keywords"
@@ -11,23 +14,28 @@ import (
 )
 
 type SearchConfig struct {
-	Keywords              []string `json:"keywords"`
-	SearchLocation        string   `json:"searchLocation"`
-	SearchGeoID           string   `json:"searchGeoId"`
-	SearchLanguage        string   `json:"searchLanguage"`
-	JobTypes              string   `json:"jobTypes"`
-	TimeFilter            string   `json:"timeFilter"`
-	RemoteOnly            bool     `json:"remoteOnly"`
-	Sources               []string `json:"sources"`
-	ResultsPerPage        int      `json:"resultsPerPage"`
-	MaxPagesPerKeyword    int      `json:"maxPagesPerKeyword"`
-	WaitBetweenSearchesMs int      `json:"waitBetweenSearchesMs"`
-	PageTimeoutMs         int      `json:"pageTimeoutMs"`
-	MaxConcurrency        int      `json:"maxConcurrency"`
+	Keywords                     []string                 `json:"keywords"`
+	SearchLocation               string                   `json:"searchLocation"`
+	SearchGeoID                  string                   `json:"searchGeoId"`
+	SearchLanguage               string                   `json:"searchLanguage"`
+	JobTypes                     string                   `json:"jobTypes"`
+	TimeFilter                   string                   `json:"timeFilter"`
+	RemoteOnly                   bool                     `json:"remoteOnly"`
+	Sources                      []string                 `json:"sources"`
+	ResultsPerPage               int                      `json:"resultsPerPage"`
+	MaxPagesPerKeyword           int                      `json:"maxPagesPerKeyword"`
+	WaitBetweenSearchesMs        int                      `json:"waitBetweenSearchesMs"`
+	PageTimeoutMs                int                      `json:"pageTimeoutMs"`
+	MaxConcurrency               int                      `json:"maxConcurrency"`
+	ProviderMaxConcurrency       int                      `json:"-"`
+	ProviderConcurrencyOverrides map[ports.ProviderID]int `json:"-"`
 }
 
 func normalizeSearchConfig(config SearchConfig) SearchConfig {
 	config.Keywords = keywords.GenerateSearchKeywords(config.Keywords)
+	if config.ProviderMaxConcurrency <= 0 {
+		config.ProviderMaxConcurrency = min(2, max(1, config.MaxConcurrency))
+	}
 	return config
 }
 
@@ -39,6 +47,11 @@ func ScrapeAllSources(
 ) ([]domain.Job, error) {
 	config = normalizeSearchConfig(config)
 	slog.Info("starting scrape", "keywords", config.Keywords)
+	slog.Info("scraper concurrency budget",
+		"global_limit", config.MaxConcurrency,
+		"provider_default_limit", config.ProviderMaxConcurrency,
+		"provider_overrides", formatProviderOverrides(config.ProviderConcurrencyOverrides),
+	)
 
 	adapterList = filterAdaptersByCadence(ctx, rdb, adapterList)
 
@@ -58,7 +71,13 @@ func ScrapeAllSources(
 		MaxConcurrency:        config.MaxConcurrency,
 	}
 
-	jobs, err := Run(ctx, adapterList, req)
+	jobs, err := runWithConcurrency(
+		ctx,
+		adapterList,
+		req,
+		config.ProviderMaxConcurrency,
+		config.ProviderConcurrencyOverrides,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -70,4 +89,13 @@ func ScrapeAllSources(
 	)
 
 	return jobs, nil
+}
+
+func formatProviderOverrides(overrides map[ports.ProviderID]int) string {
+	values := make([]string, 0, len(overrides))
+	for provider, limit := range overrides {
+		values = append(values, fmt.Sprintf("%s=%d", provider, limit))
+	}
+	sort.Strings(values)
+	return strings.Join(values, ",")
 }

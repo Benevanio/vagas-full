@@ -129,8 +129,23 @@ func (a *LeverAdapter) SourceName() string {
 	return fmt.Sprintf("Lever:%s", a.companyName)
 }
 
+func (a *LeverAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderLever,
+		Mode:     ports.DiscoveryCatalog,
+	}
+}
+
 func (a *LeverAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
 	return a.SearchBatch(ctx, []string{keyword}, req)
+}
+
+func (a *LeverAdapter) SearchCatalog(
+	ctx context.Context,
+	keywords []string,
+	req domain.ScrapeRequest,
+) ([]domain.Job, error) {
+	return a.SearchBatch(ctx, keywords, req)
 }
 
 func (a *LeverAdapter) SearchBatch(ctx context.Context, keywords []string, req domain.ScrapeRequest) ([]domain.Job, error) {

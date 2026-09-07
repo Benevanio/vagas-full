@@ -8,6 +8,7 @@ import (
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -51,6 +52,13 @@ func (a *cancelAwareAdapter) Search(ctx context.Context, _ string, _ domain.Scra
 
 func (a *batchRunTestAdapter) SourceName() string {
 	return "Batch Test"
+}
+
+func (a *batchRunTestAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderLinkedIn,
+		Mode:     ports.DiscoveryBatch,
+	}
 }
 
 func (a *batchRunTestAdapter) Search(context.Context, string, domain.ScrapeRequest) ([]domain.Job, error) {
