@@ -48,6 +48,11 @@ export const applicationEvents = pgTable(
     savedJobCreatedAtIdx: index(
       "application_events_saved_job_id_created_at_idx",
     ).on(table.savedJobId, table.createdAt),
+    // Suporta a consulta de reports.repository.ts (filtra por user_id,
+    // ordena por created_at, id) sem Seq Scan conforme o volume cresce.
+    userCreatedAtIdIdx: index(
+      "application_events_user_id_created_at_id_idx",
+    ).on(table.userId, table.createdAt, table.id),
   }),
 );
 
