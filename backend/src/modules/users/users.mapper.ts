@@ -106,7 +106,7 @@ export function toUserUpdateValues(data: UpdateProfileData): Partial<User> {
   return values;
 }
 
-type PublicUser = Omit<
+export type PublicUser = Omit<
   User,
   | "emailEncrypted"
   | "emailHash"

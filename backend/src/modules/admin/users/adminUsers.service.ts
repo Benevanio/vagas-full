@@ -4,8 +4,8 @@ import type {
   ChangeRoleInput,
   PaginatedUsers,
   ResetPasswordInput,
-  User,
 } from "./adminUsers.types";
+import type { PublicUser } from "../../users/users.mapper";
 
 export class AdminUsersService {
   constructor(private readonly repository: AdminUsersRepository) {}
@@ -14,13 +14,13 @@ export class AdminUsersService {
     return this.repository.findMany(filters);
   }
 
-  async getUserById(id: string): Promise<User> {
+  async getUserById(id: string): Promise<PublicUser> {
     const user = await this.repository.findById(id);
     if (!user) throw new Error("Usuário não encontrado");
     return user;
   }
 
-  async blockUser(id: string): Promise<User> {
+  async blockUser(id: string): Promise<PublicUser> {
     const user = await this.repository.findById(id);
     if (!user) throw new Error("Usuário não encontrado");
     if (user.isBlocked) throw new Error("Usuário já está bloqueado");
@@ -30,7 +30,7 @@ export class AdminUsersService {
     return updated;
   }
 
-  async unblockUser(id: string): Promise<User> {
+  async unblockUser(id: string): Promise<PublicUser> {
     const user = await this.repository.findById(id);
     if (!user) throw new Error("Usuário não encontrado");
     if (!user.isBlocked) throw new Error("Usuário não está bloqueado");
@@ -40,7 +40,7 @@ export class AdminUsersService {
     return updated;
   }
 
-  async changeRole({ userId, newRole }: ChangeRoleInput): Promise<User> {
+  async changeRole({ userId, newRole }: ChangeRoleInput): Promise<PublicUser> {
     const user = await this.repository.findById(userId);
     if (!user) throw new Error("Usuário não encontrado");
     if (user.role === newRole) throw new Error("Usuário já possui esta role");
@@ -60,7 +60,7 @@ export class AdminUsersService {
     await this.repository.resetPassword({ userId, newPassword });
   }
 
-  async deleteUser(id: string): Promise<User> {
+  async deleteUser(id: string): Promise<PublicUser> {
     const user = await this.repository.findById(id);
     if (!user) throw new Error("Usuário não encontrado");
 
