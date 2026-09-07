@@ -8,16 +8,6 @@ import { getConfig } from "../config";
 
 export const keywordsRoutes = Router();
 
-/**
- * @swagger
- * /api/keywords:
- *   get:
- *     summary: Retorna palavras-chave configuradas
- *     tags: [Keywords]
- *     responses:
- *       200:
- *         description: Lista de keywords
- */
 keywordsRoutes.get("/", async (req, res) => {
   const userId = req.session?.userId;
   if (!userId) return res.status(401).json({ message: "Não autenticado." });
@@ -38,29 +28,6 @@ keywordsRoutes.get("/", async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/keywords:
- *   post:
- *     summary: Enfileira uma keyword para o Go processar
- *     tags: [Keywords]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               keyword:
- *                 type: string
- *     responses:
- *       202:
- *         description: Keyword enfileirada — o Go decide se persiste
- *       403:
- *         description: Submissão de keywords por usuário desabilitada
- *       400:
- *         description: Dados inválidos
- */
 keywordsRoutes.post("/", async (req, res) => {
   const userId = req.session?.userId;
   if (!userId) return res.status(401).json({ message: "Não autenticado." });
