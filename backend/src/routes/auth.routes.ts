@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
     authAccountRateLimiter,
     authIpRateLimiter,
+    authRegisterRateLimiter,
 } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/requireAuth";
 import { validate } from "../middleware/validate";
@@ -52,6 +53,8 @@ router.delete("/connections/:provider", requireAuth, (req, res, next) => {
 // Credentials
 router.post(
   "/register",
+  authIpRateLimiter,
+  authRegisterRateLimiter,
   validate({ body: RegisterSchema }),
   (req, res, next) => {
     credentialsController.register(req, res).catch(next);

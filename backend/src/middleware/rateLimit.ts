@@ -152,6 +152,18 @@ export const authAccountRateLimiter = createRateLimiter({
   keyGenerator: normalizedEmail,
 });
 
+/**
+ * Limita o cadastro por e-mail (bucket próprio, separado do de login) para
+ * conter criação de contas em massa e enumeração de e-mails já registrados.
+ * Sem e-mail no corpo o limiter é ignorado e a validação Zod trata o 400.
+ */
+export const authRegisterRateLimiter = createRateLimiter({
+  name: "auth:register",
+  max: authAccountMax,
+  windowSeconds: authWindowSeconds,
+  keyGenerator: normalizedEmail,
+});
+
 export function resetInMemoryRateLimitStore(): void {
   memoryStore.clear();
 }
