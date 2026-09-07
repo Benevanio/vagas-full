@@ -1,5 +1,5 @@
 import cors from "cors";
-import express, { NextFunction, Request, Response } from "express";
+import express, { NextFunction, Request, Response, Router } from "express";
 import { pool } from "./db/client";
 import { cachePing } from "./lib/cache";
 import { register } from "./metrics/metrics";
@@ -20,6 +20,25 @@ import superAdminRoutes from "./routes/superAdmin.routes";
 import supportRoutes from "./routes/support.routes";
 import { userRoutes } from "./routes/users.routes";
 
+/**
+ * Checagem de banco do /ready com limite real: o `statement_timeout` é
+ * aplicado na própria conexão, então o Postgres aborta a query quando estoura
+ * — em vez de ela seguir rodando depois que a probe já desistiu. Se algo falhar
+ * no meio, a conexão é descartada em vez de voltar suja para o pool.
+ */
+async function checkDatabase(timeoutMs: number): Promise<void> {
+  const client = await pool.connect();
+  let ok = false;
+  try {
+    await client.query(`SET statement_timeout = ${Number(timeoutMs)}`);
+    await client.query("SELECT 1");
+    await client.query("SET statement_timeout = DEFAULT");
+    ok = true;
+  } finally {
+    client.release(!ok);
+  }
+}
+
 export function createJobsApiApp() {
   const app = express();
 
@@ -39,6 +58,20 @@ export function createJobsApiApp() {
 
   app.set("trust proxy", 1);
 
+  const apiV1 = Router();
+  apiV1.use("/auth", withSession, authRoutes);
+  apiV1.use("/users", withSession, requireAuth, userRoutes);
+  apiV1.use("/jobs", withSession, requireAuth, jobsRoutes);
+  apiV1.use("/keywords", withSession, requireAuth, keywordsRoutes);
+  apiV1.use("/notifications", withSession, requireAuth, notificationsRoutes);
+  apiV1.use("/saved-jobs", withSession, requireAuth, savedJobsRoutes);
+  apiV1.use("/admin", withSession, supportRoutes);
+  apiV1.use("/admin", withSession, adminRoutes);
+  apiV1.use("/admin", withSession, superAdminRoutes);
+
+  app.use("/api/v1", apiV1);
+
+  // Compatibilidade temporária para clientes ainda não migrados para /api/v1.
   app.use("/auth", withSession, authRoutes);
   app.use("/users", withSession, requireAuth, userRoutes);
   app.use("/jobs", withSession, requireAuth, jobsRoutes);
@@ -49,17 +82,9 @@ export function createJobsApiApp() {
   app.use("/admin", withSession, adminRoutes);
   app.use("/admin", withSession, superAdminRoutes);
 
-  /**
-   * @swagger
-   * /health:
-   *   get:
-   *     summary: Verifica se a API está online
-   *     tags: [System]
-   *     responses:
-   *       200:
-   *         description: API funcionando
-   */
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  const healthHandler = (_req: Request, res: Response) => res.json({ ok: true });
+  app.get("/api/v1/health", healthHandler);
+  app.get("/health", healthHandler);
 
   app.get("/ready", async (_req, res, next) => {
     try {
@@ -79,7 +104,7 @@ export function createJobsApiApp() {
       };
 
       const checks = await Promise.allSettled([
-        withTimeout(pool.query("SELECT 1")),
+        withTimeout(checkDatabase(readinessTimeoutMs)),
         withTimeout(cachePing()),
       ]);
       const ready = checks.every((check) => check.status === "fulfilled");
