@@ -161,7 +161,7 @@ export function JobDetailModal({
       onClose={onClose}
       footer={
         <>
-          <a
+          {job.jobLink ? <a
             href={job.jobLink}
             target="_blank"
             rel="noreferrer"
@@ -169,7 +169,7 @@ export function JobDetailModal({
           >
             <ExternalLink className="h-4 w-4" />
             Abrir vaga
-          </a>
+          </a> : null}
           <button
             type="button"
             onClick={onClose}
@@ -320,8 +320,9 @@ export function JobDetailModal({
                   <li key={event.id} className="relative text-sm">
                     <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-primary" />
                     <p className="font-semibold">
-                      Status alterado de {jobStatuses[event.fromStatus]} para{" "}
-                      {jobStatuses[event.toStatus]}
+                      {event.metadata?.event === "application_created"
+                        ? "Candidatura criada"
+                        : <>Status alterado de {jobStatuses[event.fromStatus]} para {jobStatuses[event.toStatus]}</>}
                     </p>
                     <time className="text-xs text-muted-foreground" dateTime={event.createdAt}>
                       {formatTimelineDate(event.createdAt)}

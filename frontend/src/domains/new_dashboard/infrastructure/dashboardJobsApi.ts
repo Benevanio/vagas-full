@@ -42,7 +42,7 @@ const SearchJobsResponseSchema = z.object({
 
 const ApiSavedJobSchema = z.object({
   id: z.string(),
-  jobLink: z.string(),
+  jobLink: z.string().nullable().optional(),
   jobTitle: z.string().nullable().optional(),
   company: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
@@ -291,9 +291,10 @@ export function toDashboardSavedJob(job: ApiSavedJob): Job {
     tags: job.keyword?.trim() ? [job.keyword.trim()] : ["Geral"],
     posted: "Não informado",
     status: job.status,
-    jobLink: job.jobLink,
+    jobLink: job.jobLink ?? "",
     source: job.source?.trim() || "Manual",
     notes: job.notes?.trim() || "",
+    appliedAt: job.appliedAt ?? undefined,
   };
 }
 
@@ -354,12 +355,12 @@ export async function searchDashboardJobs(
 
 function savedJobPayload(job: Job | NewJob, status: JobStatus = "saved") {
   const jobLink = job.jobLink.trim();
-  if (!URL.canParse(jobLink)) {
+  if (jobLink && !URL.canParse(jobLink)) {
     throw new Error("Informe um link válido para salvar a vaga.");
   }
 
   return {
-    jobLink,
+    jobLink: jobLink || undefined,
     jobTitle: job.jobTitle.trim(),
     company: job.company.trim(),
     location: job.location.trim() || undefined,
@@ -372,6 +373,13 @@ function savedJobPayload(job: Job | NewJob, status: JobStatus = "saved") {
         : undefined,
     status,
     notes: job.notes.trim() || undefined,
+    // `appliedAt` é data civil (YYYY-MM-DD). Interpretar no fuso local faz o
+    // dia mudar ao serializar para UTC em fusos positivos (ex.: UTC+3 vira o
+    // dia anterior); ancorar em UTC preserva o dia que o usuário escolheu.
+    appliedAt:
+      "appliedAt" in job && job.appliedAt
+        ? new Date(`${job.appliedAt}T00:00:00.000Z`)
+        : undefined,
   };
 }
 

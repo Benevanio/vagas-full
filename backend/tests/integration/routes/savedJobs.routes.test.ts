@@ -282,10 +282,10 @@ describe("Integration - SavedJobs Routes", () => {
         .expect(400);
     });
 
-    it("retorna 400 quando jobLink está ausente", async () => {
+    it("aceita candidatura manual sem jobLink", async () => {
       const { jobLink: _, ...withoutLink } = createPayload;
 
-      await request(app).post(BASE).send(withoutLink).expect(400);
+      await request(app).post(BASE).send(withoutLink).expect(201);
     });
 
     it("descarta campos desconhecidos (Zod strip)", async () => {

@@ -175,16 +175,23 @@ describe("SavedJobsService", () => {
       const notificationValues = vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([{ id: "notification-1" }]),
       });
+      const eventValues = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      });
 
       tx.query.savedJobs.findFirst.mockResolvedValue(undefined);
       tx.insert
         .mockReturnValueOnce({ values: savedJobValues })
+        .mockReturnValueOnce({ values: eventValues })
         .mockReturnValueOnce({ values: notificationValues });
 
       const result = await service.create("user-1", newJobData);
 
       expect(result).toMatchObject(newJobData);
-      expect(tx.insert).toHaveBeenCalledTimes(2);
+      // As três escritas (vaga, evento e notificação) precisam sair na mesma
+      // transação, senão uma falha no meio deixa a vaga sem histórico.
+      expect(tx.transaction).toHaveBeenCalledOnce();
+      expect(tx.insert).toHaveBeenCalledTimes(3);
       expect(savedJobValues).toHaveBeenCalledWith({
         ...newJobData,
         userId: "user-1",
@@ -196,6 +203,12 @@ describe("SavedJobsService", () => {
           type: "job_saved",
           entityType: "job",
           entityId: createdJob.id,
+        }),
+      );
+      expect(eventValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          savedJobId: createdJob.id,
+          metadata: expect.objectContaining({ event: "application_created" }),
         }),
       );
     });
@@ -216,6 +229,11 @@ describe("SavedJobsService", () => {
       tx.insert.mockReturnValueOnce({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([{ ...mockJob, ...newJobData }]),
+        }),
+      });
+      tx.insert.mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([]),
         }),
       });
       tx.insert.mockReturnValueOnce({

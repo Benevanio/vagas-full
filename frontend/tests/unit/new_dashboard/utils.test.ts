@@ -53,7 +53,9 @@ describe("new_dashboard utils", () => {
       tags: ["React", "TypeScript"],
       posted: "Agora mesmo",
       status: "saved",
-      jobLink: "#",
+      // Sem link informado: string vazia (falsy), não "#" — senão o detalhe
+      // oferece "Abrir vaga" apontando pra lugar nenhum.
+      jobLink: "",
       source: "Manual",
       notes: "nota",
     });
