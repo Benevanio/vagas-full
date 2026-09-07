@@ -129,8 +129,23 @@ func (a *GreenhouseAdapter) SourceName() string {
 	return fmt.Sprintf("Green House:%s", a.companyName)
 }
 
+func (a *GreenhouseAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderGreenhouse,
+		Mode:     ports.DiscoveryCatalog,
+	}
+}
+
 func (a *GreenhouseAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
 	return a.SearchBatch(ctx, []string{keyword}, req)
+}
+
+func (a *GreenhouseAdapter) SearchCatalog(
+	ctx context.Context,
+	keywords []string,
+	req domain.ScrapeRequest,
+) ([]domain.Job, error) {
+	return a.SearchBatch(ctx, keywords, req)
 }
 
 func (a *GreenhouseAdapter) SearchBatch(ctx context.Context, keywords []string, req domain.ScrapeRequest) ([]domain.Job, error) {
@@ -140,34 +155,37 @@ func (a *GreenhouseAdapter) SearchBatch(ctx context.Context, keywords []string, 
 	}
 
 	var jobs []domain.Job
+	for _, j := range rawJobs {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 
-	for _, keyword := range keywords {
-		keyword = strings.TrimSpace(keyword)
-		if keyword == "" {
+		matchedKeywords := make([]string, 0, len(keywords))
+		for _, keyword := range keywords {
+			keyword = strings.TrimSpace(keyword)
+			if keyword != "" && a.matchesRequest(j, keyword, req) {
+				matchedKeywords = append(matchedKeywords, keyword)
+			}
+		}
+		if len(matchedKeywords) == 0 {
 			continue
 		}
 
-		for _, j := range rawJobs {
-			if !a.matchesRequest(j, keyword, req) {
-				continue
-			}
-
-			source := "Green House"
-			jobs = append(jobs, domain.Job{
-				ID:          greenhouseJobID(j),
-				Title:       strings.TrimSpace(j.Title),
-				Description: greenhouseDescription(j),
-				Company:     a.companyName,
-				Location:    greenhouseLocation(j),
-				URL:         strings.TrimSpace(j.AbsoluteURL),
-				Modality:    greenhouseModality(j),
-				PostedAt:    strings.TrimSpace(j.UpdatedAt),
-				Source:      source,
-				Sources:     []string{source},
-				Keyword:     keyword,
-				Keywords:    []string{keyword},
-			})
-		}
+		source := "Green House"
+		jobs = append(jobs, domain.Job{
+			ID:          greenhouseJobID(j),
+			Title:       strings.TrimSpace(j.Title),
+			Description: greenhouseDescription(j),
+			Company:     a.companyName,
+			Location:    greenhouseLocation(j),
+			URL:         strings.TrimSpace(j.AbsoluteURL),
+			Modality:    greenhouseModality(j),
+			PostedAt:    strings.TrimSpace(j.UpdatedAt),
+			Source:      source,
+			Sources:     []string{source},
+			Keyword:     matchedKeywords[0],
+			Keywords:    matchedKeywords,
+		})
 	}
 
 	return jobs, nil

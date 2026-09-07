@@ -55,6 +55,8 @@ func run(adapterList []ports.JobSource, runtimeCfg config.RuntimeConfig) {
 	// ── Scheduler (cronjob) ──
 	schedulerCfg := cronjob.DefaultConfig()
 	schedulerCfg.MaxConcurrency = runtimeCfg.MaxConcurrency
+	schedulerCfg.ProviderMaxConcurrency = runtimeCfg.ProviderMaxConcurrency
+	schedulerCfg.ProviderConcurrencyOverrides = runtimeCfg.ProviderConcurrencyOverrides
 	scheduler := cronjob.New(schedulerCfg, kwStore, jobStore, adapterList, rdb, runLock)
 
 	scheduler.OnComplete = func(kws []string, scraped, saved int, duration time.Duration) {
