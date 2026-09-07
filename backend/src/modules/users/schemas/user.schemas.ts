@@ -71,6 +71,10 @@ export const updatePreferencesSchema = z
 
 export const createPreferencesSchema = updatePreferencesSchema;
 
+export const deleteAccountSchema = z.object({
+  confirmation: z.literal("EXCLUIR"),
+});
+
 // ── Tipos inferidos ───────────────────────────────────────────────────────────
 
 export type UpdateProfileData = z.infer<typeof updateProfileSchema>;

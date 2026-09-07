@@ -10,11 +10,22 @@ const mockUsersService = vi.hoisted(() => ({
   createPreferences: vi.fn(),
   updatePreferences: vi.fn(),
 }));
+const mockPrivacyService = vi.hoisted(() => ({
+  exportUserData: vi.fn(),
+  deleteAccount: vi.fn(),
+}));
 
 vi.mock("../../../src/modules/users/users.service", () => ({
   UsersService: class {
     constructor() {
       return mockUsersService;
+    }
+  },
+}));
+vi.mock("../../../src/modules/users/privacy.service", () => ({
+  PrivacyService: class {
+    constructor() {
+      return mockPrivacyService;
     }
   },
 }));
@@ -84,6 +95,8 @@ describe("Integration - Users Routes", () => {
       userId: "user_abc",
       remoteOnly: false,
     });
+    mockPrivacyService.exportUserData.mockResolvedValue({ profile: fixtureUser });
+    mockPrivacyService.deleteAccount.mockResolvedValue(undefined);
 
     app = createJobsApiApp();
   });
@@ -115,6 +128,25 @@ describe("Integration - Users Routes", () => {
       } as any);
 
       await request(app).get(`${BASE}/profile`).expect(401);
+    });
+  });
+
+  describe("dados e exclusão de conta", () => {
+    it("exporta somente os dados do usuário autenticado", async () => {
+      const res = await request(app).get(`${BASE}/export`).expect(200);
+      expect(res.headers["content-disposition"]).toContain("meus-dados.json");
+      expect(res.body).toEqual({ profile: fixtureUser });
+      expect(mockPrivacyService.exportUserData).toHaveBeenCalledWith("user_abc");
+    });
+
+    it("exige confirmação explícita e encerra a sessão ao excluir", async () => {
+      await request(app).delete(`${BASE}/account`).send({}).expect(400);
+      await request(app)
+        .delete(`${BASE}/account`)
+        .send({ confirmation: "EXCLUIR" })
+        .expect(204);
+      expect(mockPrivacyService.deleteAccount).toHaveBeenCalledWith("user_abc");
+      expect(fixtureSession.destroy).toHaveBeenCalled();
     });
   });
 

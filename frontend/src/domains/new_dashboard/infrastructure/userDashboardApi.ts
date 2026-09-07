@@ -213,3 +213,17 @@ export async function updateUserPreferences(preferences: SearchPreferences) {
   );
   return toSearchPreferences(data);
 }
+
+export async function exportUserData() {
+  const { data } = await api.get("/users/export", { responseType: "blob" });
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "meus-dados.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function deleteUserAccount() {
+  await api.delete("/users/account", { data: { confirmation: "EXCLUIR" } });
+}
