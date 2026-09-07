@@ -1,16 +1,17 @@
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { jobStatusClasses, jobStatuses } from "../../constants";
-import type { Job, JobStatus, JobTimelineEvent } from "../../types";
 import { getDashboardSavedJobEvents } from "../../infrastructure/dashboardJobsApi";
+import type { Job, JobStatus, JobTimelineEvent } from "../../types";
 import { Modal } from "../shared/Modal";
+import { ApplicationNotesSection } from "./ApplicationNotesSection";
 import { FormattedJobDescription } from "./FormattedJobDescription";
 
 interface JobDetailModalProps {
   job: Job;
   onClose: () => void;
   onStatusChange: (jobId: string, status: JobStatus) => void;
-  onNotesChange: (jobId: string, notes: string) => void;
+  onNotesChange?: (jobId: string, notes: string) => void;
   isTracked?: boolean;
   timelineVersion?: number;
 }
@@ -277,19 +278,20 @@ export function JobDetailModal({
           </select>
         </label>
 
-        <div className="space-y-2">
+        {isTracked ? <ApplicationNotesSection savedJobId={job.id} /> : <div className="space-y-2">
           <label className="space-y-2 block">
             <span className="text-xs font-bold uppercase text-muted-foreground">Notas</span>
             <textarea
+              aria-label="Notas"
               value={job.notes}
-              onChange={(event) => onNotesChange(job.id, event.target.value)}
+              onChange={(event) => onNotesChange?.(job.id, event.target.value)}
               className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
             />
           </label>
           <p className="text-xs text-muted-foreground">
             Suas notas são salvas automaticamente ao fechar este detalhe.
           </p>
-        </div>
+        </div>}
 
         {isTracked ? (
           <section className="space-y-2" aria-labelledby="timeline-title">

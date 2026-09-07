@@ -17,10 +17,18 @@ import type {
 
 const dashboardApiMock = vi.hoisted(() => ({
   getDashboardSavedJobEvents: vi.fn(),
+  getDashboardApplicationNotes: vi.fn(),
+  createDashboardApplicationNote: vi.fn(),
+  updateDashboardApplicationNote: vi.fn(),
+  deleteDashboardApplicationNote: vi.fn(),
 }));
 
 vi.mock("@/domains/new_dashboard/infrastructure/dashboardJobsApi", () => ({
   getDashboardSavedJobEvents: dashboardApiMock.getDashboardSavedJobEvents,
+  getDashboardApplicationNotes: dashboardApiMock.getDashboardApplicationNotes,
+  createDashboardApplicationNote: dashboardApiMock.createDashboardApplicationNote,
+  updateDashboardApplicationNote: dashboardApiMock.updateDashboardApplicationNote,
+  deleteDashboardApplicationNote: dashboardApiMock.deleteDashboardApplicationNote,
 }));
 
 const baseJob: Job = {
@@ -58,6 +66,32 @@ function makeJobs(count: number): Job[] {
 describe("new_dashboard job components", () => {
   beforeEach(() => {
     dashboardApiMock.getDashboardSavedJobEvents.mockReset();
+    dashboardApiMock.getDashboardApplicationNotes.mockReset();
+    dashboardApiMock.createDashboardApplicationNote.mockReset();
+    dashboardApiMock.updateDashboardApplicationNote.mockReset();
+    dashboardApiMock.deleteDashboardApplicationNote.mockReset();
+    dashboardApiMock.getDashboardApplicationNotes.mockResolvedValue([]);
+  });
+
+  it("cria, edita e remove notas privadas no detalhe da candidatura", async () => {
+    dashboardApiMock.createDashboardApplicationNote.mockResolvedValue({
+      id: "note-1", content: "Preparar portfólio", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    });
+    dashboardApiMock.updateDashboardApplicationNote.mockResolvedValue({
+      id: "note-1", content: "Portfólio enviado", createdAt: "2026-01-01", updatedAt: "2026-01-02",
+    });
+
+    render(<JobDetailModal job={baseJob} isTracked onClose={vi.fn()} onStatusChange={vi.fn()} />);
+    await screen.findByText("Nenhuma nota adicionada.");
+    fireEvent.change(screen.getByLabelText("Nova nota"), { target: { value: "Preparar portfólio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar nota" }));
+    await screen.findByText("Preparar portfólio");
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.change(screen.getByLabelText("Nova nota"), { target: { value: "Portfólio enviado" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar nota" }));
+    await screen.findByText("Portfólio enviado");
+    fireEvent.click(screen.getByRole("button", { name: "Remover" }));
+    await waitFor(() => expect(dashboardApiMock.deleteDashboardApplicationNote).toHaveBeenCalledWith("job-1", "note-1"));
   });
 
   it("exibe a timeline em ordem cronológica e atualiza após mudar o status", async () => {
