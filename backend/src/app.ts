@@ -13,6 +13,7 @@ import adminRoutes from "./routes/admin.routes";
 import { jobsRoutes } from "./routes/jobs.routes";
 import { keywordsRoutes } from "./routes/keywords.routes";
 import { notificationsRoutes } from "./routes/notifications.routes";
+import { reportsRoutes } from "./routes/reports.routes";
 import { savedJobsRoutes } from "./routes/savedJobs.routes";
 import superAdminRoutes from "./routes/superAdmin.routes";
 import supportRoutes from "./routes/support.routes";
@@ -57,6 +58,7 @@ export function createJobsApiApp() {
   app.use("/keywords", withSession, requireAuth, keywordsRoutes);
   app.use("/notifications", withSession, requireAuth, notificationsRoutes);
   app.use("/saved-jobs", withSession, requireAuth, savedJobsRoutes);
+  app.use("/reports", withSession, requireAuth, reportsRoutes);
   app.use("/admin", withSession, supportRoutes);
   app.use("/admin", withSession, adminRoutes);
   app.use("/admin", withSession, superAdminRoutes);

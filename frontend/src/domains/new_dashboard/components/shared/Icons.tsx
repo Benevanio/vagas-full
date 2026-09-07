@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   BriefcaseBusiness,
   Check,
@@ -23,6 +24,7 @@ export const Icons = {
   Dashboard: LayoutDashboard,
   Vagas: BriefcaseBusiness,
   Mentoria: UsersRound,
+  Relatorios: BarChart3,
   Perfil: UserRound,
   Ajuda: HelpCircle,
   Sair: LogOut,

@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "^/(auth|users|jobs|keywords|saved-jobs)": {
+      "^/(auth|users|jobs|keywords|saved-jobs|reports)": {
         target: apiTarget,
         changeOrigin: true,
         // Deixa navegações de página (ex: redirect OAuth para /auth/callback)

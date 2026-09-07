@@ -7,6 +7,7 @@ const tabs = [
   { label: "Dashboard", to: "/dashboard", icon: Icons.Dashboard },
   { label: "Vagas", to: "/vagas", icon: Icons.Vagas },
   { label: "Mentoria", to: "/mentoria", icon: Icons.Mentoria },
+  { label: "Relatórios", to: "/relatorios", icon: Icons.Relatorios },
 ];
 
 export function MobileTabBar() {
@@ -20,7 +21,7 @@ export function MobileTabBar() {
       }}
       aria-label="Navegação principal mobile"
     >
-      <div className="mx-auto grid max-w-lg grid-cols-4 gap-1">
+      <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = location.pathname === tab.to;

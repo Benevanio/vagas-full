@@ -1,5 +1,13 @@
 import { useAuth } from "@/domains/auth/application/AuthContext";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardTab } from "./components/dashboard/DashboardTab";
 import { HelpTab } from "./components/help/HelpTab";
@@ -12,6 +20,12 @@ import { MobileTabBar } from "./components/layout/MobileTabBar";
 import { Sidebar } from "./components/layout/Sidebar";
 import { MentoringTab } from "./components/mentoring/MentoringTab";
 import { ProfileTab } from "./components/profile/ProfileTab";
+// Recharts só é baixado quando o usuário realmente abre /relatorios.
+const ReportsTab = lazy(() =>
+  import("./components/reports/ReportsTab").then((m) => ({
+    default: m.ReportsTab,
+  })),
+);
 import { Toast } from "./components/shared/Toast";
 import { jobStatuses } from "./constants";
 import { useDashboardJobs } from "./hooks/useDashboardJobs";
@@ -44,6 +58,7 @@ function getSection(pathname: string) {
   if (pathname.startsWith("/mentoria")) return "mentoria";
   if (pathname.startsWith("/perfil")) return "perfil";
   if (pathname.startsWith("/ajuda")) return "ajuda";
+  if (pathname.startsWith("/relatorios")) return "relatorios";
   return "home";
 }
 
@@ -526,6 +541,18 @@ export default function NewDashboardPage() {
         );
       case "mentoria":
         return <MentoringTab />;
+      case "relatorios":
+        return (
+          <Suspense
+            fallback={
+              <p className="px-6 py-8 text-sm text-muted-foreground">
+                Carregando relatórios...
+              </p>
+            }
+          >
+            <ReportsTab />
+          </Suspense>
+        );
       case "perfil":
         return (
           <ProfileTab

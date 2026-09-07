@@ -13,10 +13,13 @@ Active project-level architectural decisions (AD-NNN). Each design must conform 
 
 ## Handoff
 
-**Feature concluída:** `job-detail-reorganizacao` (PAV-92) — ✅ Done.
-**Estado:** implementada e commitada na branch `jovinull/pav-92-frontend` (4 commits: reorg de tiles, dedup do payload, feedback de notas, docs). Validação standalone PASS (8/8 ACs, gate 352/352 frontend, sensor de mutação raciocinado sem sobreviventes). Relatório em `.specs/features/job-detail-reorganizacao/validation.md`.
-**Entregue:** `JobDetailModal` reorganizado — local/modalidade/nível/fonte/salário/match em tiles rotulados; bloco "Payload da vaga" renomeado para "Detalhes adicionais" e sem duplicar dado já mostrado; texto indicando que notas salvam ao fechar. Sem migração de modal pra página (critério do próprio card já resolvia isso) e sem novo contrato de backend.
-**Pendências deixadas ao usuário:** push + PR ainda NÃO feitos (aguardando confirmação do usuário).
-**Próximo passo:** quando o usuário pedir, abrir PR da PAV-92.
+**Feature em review:** `relatorios-kpis` (PAV-30) — PR #251, aguardando reviews.
+**Estado:** 13/13 tasks implementadas + 3 correções da review do Benevanio (preset "Tudo" retornando histórico completo, cancelamento de requisição concorrente, índice em `application_events`). Relatório em `.specs/features/relatorios-kpis/validation.md`.
+**Entregue:** `GET /reports/kpis` (candidaturas por semana, taxa de entrevista, tempo médio por etapa; período via `from`/`to` ou `all=true`) sobre `saved_jobs`/`application_events`; núcleo puro `computeKpis` + helpers de semana ISO; seção `/relatorios` no dashboard (sidebar + tab bar mobile) com Recharts lazy-loaded, seletor de período, sumário e estados loading/empty/erro-com-retry. Docs no `BACKEND.md`.
+**Desvios do design (sem violar spec):** `StageDurationsChart` usa barras CSS em vez de Recharts (precisão null-vs-zero do KPI-16); loading da aba é texto inline, não o componente `Loading` global (que é overlay fullscreen); schema Zod da query é construído por request, não uma instância única de módulo (evita congelar o default "hoje").
+**Pendência conhecida:** o reviewer pediu teste de integração frontend → API → backend; o repo não tem harness de E2E (lacuna documentada no `LOCAL_DEVELOPMENT.md`), então a cobertura vai até schema → service → repository → core.
+
+**Feature concluída:** `job-detail-reorganizacao` (PAV-92) — ✅ mergeada na develop (PR #252).
+**Entregue:** `JobDetailModal` reorganizado — local/modalidade/nível/fonte/salário/match em tiles rotulados; bloco "Payload da vaga" renomeado para "Detalhes adicionais" e sem duplicar dado já mostrado; texto indicando que notas salvam ao fechar.
 
 **Feature anterior concluída:** `email-module` (PAV-76) — ✅ Done. 11/11 tasks, branch `feature/pav-76-modulo-email`, Verifier PASS (11/11 ACs, gate 529/0, sensor 5/5). Entregue: `emailService.send/sendWelcome`, fila BullMQ/Valkey, `MailProvider`+Resend+Noop, template `welcome`, boas-vindas no registro. Envs de produção `EMAIL_API_KEY`/`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME` a comunicar ao dev quando for pra prod.
