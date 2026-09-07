@@ -159,6 +159,13 @@ describe("jobsApiApp", () => {
     expect(res.body).toEqual({ ok: true });
   });
 
+  it("GET /api/v1/health retorna ok", async () => {
+    const app = createJobsApiApp();
+    const res = await request(app).get("/api/v1/health").expect(200);
+
+    expect(res.body).toEqual({ ok: true });
+  });
+
   // ── CORS ──────────────────────────────────────────────────────────────
 
   it("permite CORS para origem autorizada", async () => {
@@ -250,6 +257,13 @@ describe("jobsApiApp", () => {
     expect(mocks.cacheAbsoluteSMembers).not.toHaveBeenCalled();
     expect(res.body.jobs).toHaveLength(2);
     expect(res.body.source).toContain("valkey_filtered_by_keywords");
+  });
+
+  it("GET /api/v1/jobs/search usa a rota versionada", async () => {
+    const app = createJobsApiApp();
+    const res = await request(app).get("/api/v1/jobs/search").expect(200);
+
+    expect(res.body.jobs).toHaveLength(2);
   });
 
   it("GET /jobs/search sem keywords usa índice global", async () => {
