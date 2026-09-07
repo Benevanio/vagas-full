@@ -90,22 +90,28 @@ describe("ReportsTab", () => {
     expect(screen.getByText("Carregando relatórios...")).toBeInTheDocument();
   });
 
-  it("com dados, renderiza o sumário e os 3 gráficos (KPI-12)", () => {
-    hookMock.useReportsKpis.mockReturnValue(
-      baseHookReturn({ data: dataFixture }),
-    );
+  it(
+    "com dados, renderiza o sumário e os 3 gráficos (KPI-12)",
+    () => {
+      hookMock.useReportsKpis.mockReturnValue(
+        baseHookReturn({ data: dataFixture }),
+      );
 
-    render(<ReportsTab />);
+      render(<ReportsTab />);
 
-    expect(screen.getByText("Candidaturas por semana")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Taxa de entrevista" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Tempo médio por etapa")).toBeInTheDocument();
-    // "67%" aparece no tile de sumário e no centro do donut.
-    expect(screen.getAllByText("67%").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Vaga salva → Candidatura")).toBeInTheDocument();
-  });
+      expect(screen.getByText("Candidaturas por semana")).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Taxa de entrevista" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Tempo médio por etapa")).toBeInTheDocument();
+      // "67%" aparece no tile de sumário e no centro do donut.
+      expect(screen.getAllByText("67%").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("Vaga salva → Candidatura")).toBeInTheDocument();
+    },
+    // Renderiza 3 gráficos Recharts reais (SVG) de uma vez; sob cobertura
+    // (v8) fica bem mais lento que o timeout padrão de 5s.
+    15000,
+  );
 
   it("com resposta vazia, mostra empty state em cada card (KPI-14)", () => {
     hookMock.useReportsKpis.mockReturnValue(

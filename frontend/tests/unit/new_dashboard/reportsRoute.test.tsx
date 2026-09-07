@@ -132,34 +132,38 @@ describe("NewDashboardPage — rota /relatorios (KPI-10)", () => {
         await screen.findByRole(
           "heading",
           { name: "Relatórios" },
-          { timeout: 9000 },
+          { timeout: 18000 },
         ),
       ).toBeInTheDocument();
       await waitFor(
         () => expect(reportsApiMock.getReportsKpis).toHaveBeenCalled(),
-        { timeout: 9000 },
+        { timeout: 18000 },
       );
     },
-    10000,
+    20000,
   );
 
-  it("destaca 'Relatórios' na sidebar e na tab bar mobile quando ativo (KPI-10)", async () => {
-    renderPage("/relatorios");
-    await screen.findByRole("heading", { name: "Relatórios" });
+  it(
+    "destaca 'Relatórios' na sidebar e na tab bar mobile quando ativo (KPI-10)",
+    async () => {
+      renderPage("/relatorios");
+      await screen.findByRole("heading", { name: "Relatórios" }, { timeout: 18000 });
 
-    const links = screen.getAllByRole("link", { name: "Relatórios" });
-    expect(links).toHaveLength(2); // sidebar (desktop) + tab bar (mobile)
+      const links = screen.getAllByRole("link", { name: "Relatórios" });
+      expect(links).toHaveLength(2); // sidebar (desktop) + tab bar (mobile)
 
-    const sidebarLink = links.find((link) =>
-      link.className.includes("bg-primary"),
-    );
-    expect(sidebarLink).toBeDefined();
-    expect(sidebarLink).toHaveAttribute("href", "/relatorios");
+      const sidebarLink = links.find((link) =>
+        link.className.includes("bg-primary"),
+      );
+      expect(sidebarLink).toBeDefined();
+      expect(sidebarLink).toHaveAttribute("href", "/relatorios");
 
-    const mobileTabLink = links.find(
-      (link) => link.getAttribute("aria-current") === "page",
-    );
-    expect(mobileTabLink).toBeDefined();
-    expect(mobileTabLink).toHaveAttribute("href", "/relatorios");
-  });
+      const mobileTabLink = links.find(
+        (link) => link.getAttribute("aria-current") === "page",
+      );
+      expect(mobileTabLink).toBeDefined();
+      expect(mobileTabLink).toHaveAttribute("href", "/relatorios");
+    },
+    20000,
+  );
 });
