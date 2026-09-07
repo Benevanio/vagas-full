@@ -43,20 +43,25 @@ export class SavedJobsService {
       throw AppError.conflict("Vaga já salva.");
     }
 
-    const result = await this.tx
-      .insert(savedJobs)
-      .values({ ...data, userId })
-      .returning();
-    await this.tx.insert(applicationEvents).values({
-      userId,
-      savedJobId: result[0].id,
-      type: "status_changed",
-      fromStatus: "saved",
-      toStatus: result[0].status,
-      metadata: { event: "application_created", source: data.source ?? "Manual" },
+    // As três escritas precisam ser atômicas, como já acontece no `update()`:
+    // sem transação, uma falha no evento ou na notificação deixaria a vaga
+    // criada sem histórico, e um retry do usuário duplicaria o registro.
+    return this.tx.transaction(async (tx) => {
+      const result = await tx
+        .insert(savedJobs)
+        .values({ ...data, userId })
+        .returning();
+      await tx.insert(applicationEvents).values({
+        userId,
+        savedJobId: result[0].id,
+        type: "status_changed",
+        fromStatus: "saved",
+        toStatus: result[0].status,
+        metadata: { event: "application_created", source: data.source ?? "Manual" },
+      });
+      await new NotificationsService(tx).createForSavedJob(userId, result[0]);
+      return result[0];
     });
-    await new NotificationsService(this.tx).createForSavedJob(userId, result[0]);
-    return result[0];
   }
 
   async update(

@@ -188,6 +188,9 @@ describe("SavedJobsService", () => {
       const result = await service.create("user-1", newJobData);
 
       expect(result).toMatchObject(newJobData);
+      // As três escritas (vaga, evento e notificação) precisam sair na mesma
+      // transação, senão uma falha no meio deixa a vaga sem histórico.
+      expect(tx.transaction).toHaveBeenCalledOnce();
       expect(tx.insert).toHaveBeenCalledTimes(3);
       expect(savedJobValues).toHaveBeenCalledWith({
         ...newJobData,
