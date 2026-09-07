@@ -10,7 +10,16 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
-export const newsletterSendStatusEnum = ["sent", "skipped_no_match"] as const;
+/**
+ * `pending` é a reserva do envio: gravada antes de enfileirar o e-mail, para
+ * que dois workers não processem o mesmo (userId, isoWeek). Vira `sent` só
+ * depois que o enqueue é confirmado, ou some se o enqueue falhar.
+ */
+export const newsletterSendStatusEnum = [
+  "pending",
+  "sent",
+  "skipped_no_match",
+] as const;
 
 export type NewsletterSendStatus = (typeof newsletterSendStatusEnum)[number];
 

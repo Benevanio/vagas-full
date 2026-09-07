@@ -189,6 +189,20 @@ export async function sendForUser(
     return;
   }
 
+  // Reserva atômica do envio. O `findFirst` acima é só atalho: com mais de um
+  // worker, dois podiam passar por ele antes de qualquer um gravar. Aqui o
+  // índice único (userId, isoWeek) decide quem processa — quem perder sai sem
+  // enfileirar nada.
+  const [reservation] = await db
+    .insert(newsletterSends)
+    .values({ userId, isoWeek, status: "pending", sentJobIds: [] })
+    .onConflictDoNothing({
+      target: [newsletterSends.userId, newsletterSends.isoWeek],
+    })
+    .returning({ id: newsletterSends.id });
+
+  if (!reservation) return;
+
   const excludeJobIds = await getRecentlySentJobIds(
     userId,
     RECENT_SEND_LOOKBACK_WEEKS,
@@ -200,12 +214,10 @@ export async function sendForUser(
   );
 
   if (matchedJobs.length === 0) {
-    await db.insert(newsletterSends).values({
-      userId,
-      isoWeek,
-      status: "skipped_no_match",
-      sentJobIds: [],
-    });
+    await db
+      .update(newsletterSends)
+      .set({ status: "skipped_no_match" })
+      .where(eq(newsletterSends.id, reservation.id));
     return;
   }
 
@@ -214,25 +226,46 @@ export async function sendForUser(
   const { frontendUrl } = getConfig();
   const unsubscribeUrl = `${frontendUrl}/newsletter/unsubscribe?token=${generateUnsubscribeToken(userId)}`;
 
-  await emailService.send({
-    template: "newsletter",
-    to: user.email,
-    data: {
-      name: user.displayName || user.firstName || "",
-      matchedJobs,
-      appliedCount,
-      news,
-      unsubscribeUrl,
-      appUrl: frontendUrl,
-    },
-  });
+  try {
+    // `throwOnEnqueueFailure` é essencial aqui: o comportamento padrão do
+    // emailService é engolir falha de enqueue (AD-002), o que faria a
+    // newsletter ser marcada como enviada sem nunca ter entrado na fila.
+    await emailService.send(
+      {
+        template: "newsletter",
+        to: user.email,
+        data: {
+          name: user.displayName || user.firstName || "",
+          matchedJobs,
+          appliedCount,
+          news,
+          unsubscribeUrl,
+          appUrl: frontendUrl,
+        },
+      },
+      { throwOnEnqueueFailure: true },
+    );
+  } catch (error) {
+    // Libera a reserva para que a próxima execução tente de novo — sem isso a
+    // semana ficaria marcada e a newsletter se perderia em silêncio.
+    await db
+      .delete(newsletterSends)
+      .where(eq(newsletterSends.id, reservation.id));
+    logWarn("Falha ao enfileirar a newsletter; reserva liberada.", {
+      userId,
+      isoWeek,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
 
-  await db.insert(newsletterSends).values({
-    userId,
-    isoWeek,
-    status: "sent",
-    sentJobIds: matchedJobs.map((job) => String(job.id ?? "")),
-  });
+  await db
+    .update(newsletterSends)
+    .set({
+      status: "sent",
+      sentJobIds: matchedJobs.map((job) => String(job.id ?? "")),
+    })
+    .where(eq(newsletterSends.id, reservation.id));
 }
 
 /** Grava o snapshot de notícias da semana no Valkey (TTL 7 dias). */

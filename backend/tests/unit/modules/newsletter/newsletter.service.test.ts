@@ -9,6 +9,11 @@ const dbMocks = vi.hoisted(() => {
     select,
     selectWhere,
     insertValues: vi.fn(),
+    // Reserva atômica: insert(...).values(...).onConflictDoNothing(...).returning()
+    reservationReturning: vi.fn(),
+    updateSet: vi.fn(),
+    updateWhere: vi.fn(),
+    deleteWhere: vi.fn(),
   };
 });
 
@@ -66,7 +71,23 @@ vi.mock("../../../../src/db/client", () => ({
       newsletterSends: { findFirst: dbMocks.newsletterSendsFindFirst },
     },
     select: dbMocks.select,
-    insert: vi.fn(() => ({ values: dbMocks.insertValues })),
+    insert: vi.fn(() => ({
+      values: vi.fn((values: unknown) => {
+        dbMocks.insertValues(values);
+        return {
+          onConflictDoNothing: vi.fn(() => ({
+            returning: dbMocks.reservationReturning,
+          })),
+        };
+      }),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((values: unknown) => {
+        dbMocks.updateSet(values);
+        return { where: dbMocks.updateWhere };
+      }),
+    })),
+    delete: vi.fn(() => ({ where: dbMocks.deleteWhere })),
   },
 }));
 
@@ -296,6 +317,10 @@ describe("newsletter.service — sendForUser", () => {
     configMocks.getConfig.mockReturnValue({ frontendUrl: "https://app.com" });
     emailServiceMocks.send.mockResolvedValue(undefined);
     dbMocks.insertValues.mockResolvedValue(undefined);
+    // Por padrão, a reserva do envio é adquirida por este worker.
+    dbMocks.reservationReturning.mockResolvedValue([{ id: "reservation-1" }]);
+    dbMocks.updateWhere.mockResolvedValue(undefined);
+    dbMocks.deleteWhere.mockResolvedValue(undefined);
   });
 
   it("não chama emailService.send quando já existe newsletter_sends pra (userId, isoWeek) — idempotência", async () => {
@@ -317,11 +342,8 @@ describe("newsletter.service — sendForUser", () => {
     await sendForUser("user-1", "2026-W36");
 
     expect(emailServiceMocks.send).not.toHaveBeenCalled();
-    expect(dbMocks.insertValues).toHaveBeenCalledWith({
-      userId: "user-1",
-      isoWeek: "2026-W36",
+    expect(dbMocks.updateSet).toHaveBeenCalledWith({
       status: "skipped_no_match",
-      sentJobIds: [],
     });
   });
 
@@ -339,15 +361,13 @@ describe("newsletter.service — sendForUser", () => {
         unsubscribeUrl: "https://app.com/newsletter/unsubscribe?token=TOKEN123",
         appUrl: "https://app.com",
       },
-    });
+    }, { throwOnEnqueueFailure: true });
   });
 
   it("grava newsletter_sends com status=sent e sentJobIds das vagas enviadas", async () => {
     await sendForUser("user-1", "2026-W36");
 
-    expect(dbMocks.insertValues).toHaveBeenCalledWith({
-      userId: "user-1",
-      isoWeek: "2026-W36",
+expect(dbMocks.updateSet).toHaveBeenCalledWith({
       status: "sent",
       sentJobIds: ["job-1"],
     });
@@ -371,6 +391,42 @@ describe("newsletter.service — sendForUser", () => {
     expect(loggerMocks.logWarn).toHaveBeenCalled();
   });
 
+  it("não envia quando outro worker já reservou a semana (reserva atômica)", async () => {
+    // `findFirst` não achou nada (dois workers passaram pelo atalho), mas o
+    // índice único deixou só um inserir: aqui a reserva volta vazia.
+    dbMocks.reservationReturning.mockResolvedValue([]);
+
+    await sendForUser("user-1", "2026-W36");
+
+    expect(emailServiceMocks.send).not.toHaveBeenCalled();
+  });
+
+  it("reserva o envio antes de enfileirar o e-mail", async () => {
+    await sendForUser("user-1", "2026-W36");
+
+    // A reserva precisa ser gravada como `pending` antes do envio; só depois
+    // de confirmado o enqueue ela vira `sent`.
+    expect(dbMocks.insertValues).toHaveBeenCalledWith({
+      userId: "user-1",
+      isoWeek: "2026-W36",
+      status: "pending",
+      sentJobIds: [],
+    });
+  });
+
+  it("libera a reserva e não marca como enviada quando o enqueue falha", async () => {
+    emailServiceMocks.send.mockRejectedValue(new Error("Valkey indisponível"));
+
+    await sendForUser("user-1", "2026-W36");
+
+    // Sem isso a semana ficaria reservada para sempre e a newsletter se
+    // perderia em silêncio, já que a próxima execução veria o registro.
+    expect(dbMocks.deleteWhere).toHaveBeenCalled();
+    expect(dbMocks.updateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "sent" }),
+    );
+  });
+
   it("usa news: [] quando o snapshot de notícias está ausente no Valkey, sem impedir o envio", async () => {
     cacheClientMocks.get.mockResolvedValue(null);
 
@@ -378,6 +434,7 @@ describe("newsletter.service — sendForUser", () => {
 
     expect(emailServiceMocks.send).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ news: [] }) }),
+      { throwOnEnqueueFailure: true },
     );
   });
 });
