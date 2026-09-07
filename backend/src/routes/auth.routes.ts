@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
     authAccountRateLimiter,
     authIpRateLimiter,
+    authRegisterRateLimiter,
 } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/requireAuth";
 import { validate } from "../middleware/validate";
@@ -36,6 +37,12 @@ const providerParamsSchema = z.object({
   provider: OAuthProviderSchema,
 });
 
+// Sem isso, um id fora do formato uuid chega até a query e o Postgres devolve
+// erro de conversão — 500 onde deveria ser 400.
+const sessionParamsSchema = z.object({
+  sessionId: z.string().uuid("ID de sessão inválido."),
+});
+
 // OAuth
 router.get(
   "/:provider/url",
@@ -56,9 +63,14 @@ router.get("/connections", requireAuth, (req, res, next) => {
 router.get("/sessions", requireAuth, (req, res, next) => {
   sessionsController.list(req, res).catch(next);
 });
-router.delete("/sessions/:sessionId", requireAuth, (req, res, next) => {
-  sessionsController.revoke(req, res).catch(next);
-});
+router.delete(
+  "/sessions/:sessionId",
+  requireAuth,
+  validate({ params: sessionParamsSchema }),
+  (req, res, next) => {
+    sessionsController.revoke(req, res).catch(next);
+  },
+);
 router.post("/sessions/revoke-others", requireAuth, (req, res, next) => {
   sessionsController.revokeOthers(req, res).catch(next);
 });
@@ -69,6 +81,8 @@ router.delete("/connections/:provider", requireAuth, (req, res, next) => {
 // Credentials
 router.post(
   "/register",
+  authIpRateLimiter,
+  authRegisterRateLimiter,
   validate({ body: RegisterSchema }),
   (req, res, next) => {
     credentialsController.register(req, res).catch(next);

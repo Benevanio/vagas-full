@@ -453,6 +453,31 @@ describe("Integration - Auth Routes", () => {
         .send(registerPayload)
         .expect(500);
     });
+
+    it("bloqueia cadastros repetidos para o mesmo email com 429", async () => {
+      vi.mocked(getIronSession).mockResolvedValue(
+        fixtureCredentialsSession as any,
+      );
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(app)
+          .post(`${BASE}/register`)
+          .send(registerPayload)
+          .expect(201);
+      }
+
+      const res = await request(app)
+        .post(`${BASE}/register`)
+        .send(registerPayload)
+        .expect(429);
+
+      expect(res.body).toHaveProperty(
+        "error",
+        "Muitas tentativas. Tente novamente mais tarde.",
+      );
+      expect(res.headers["retry-after"]).toBeDefined();
+      expect(mockCredentialsService.register).toHaveBeenCalledTimes(5);
+    });
   });
 
   // ── POST /login ───────────────────────────────────────────────────────────
@@ -620,6 +645,44 @@ describe("Integration - Auth Routes", () => {
         code: "UNAUTHORIZED",
         message: "Não autenticado.",
       });
+    });
+  });
+
+  describe("DELETE /sessions/:sessionId", () => {
+    beforeEach(() => {
+      vi.mocked(getIronSession).mockResolvedValue({
+        userId: fixtureUser.id,
+        sessionId: "11111111-1111-4111-8111-111111111111",
+        save: vi.fn(),
+        destroy: vi.fn(),
+      } as any);
+      mockSessionService.isActive.mockResolvedValue(true);
+      mockSessionService.revoke.mockResolvedValue(true);
+    });
+
+    it("retorna 400 para sessionId fora do formato uuid, sem chegar no service", async () => {
+      // Antes da validação, uma string qualquer chegava na query e o Postgres
+      // devolvia erro de conversão — 500 onde deveria ser 400.
+      const res = await request(app)
+        .delete(`${BASE}/sessions/nao-e-uuid`)
+        .expect(400);
+
+      expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(mockSessionService.revoke).not.toHaveBeenCalled();
+    });
+
+    it("revoga normalmente quando o sessionId é um uuid válido", async () => {
+      const alvo = "22222222-2222-4222-8222-222222222222";
+
+      const res = await request(app)
+        .delete(`${BASE}/sessions/${alvo}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ ok: true, currentSessionRevoked: false });
+      expect(mockSessionService.revoke).toHaveBeenCalledWith(
+        fixtureUser.id,
+        alvo,
+      );
     });
   });
 });
