@@ -1,5 +1,5 @@
 import cors from "cors";
-import express, { NextFunction, Request, Response } from "express";
+import express, { NextFunction, Request, Response, Router } from "express";
 import { register } from "./metrics/metrics";
 import { corsOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/errorHandler";
@@ -38,6 +38,20 @@ export function createJobsApiApp() {
 
   app.set("trust proxy", 1);
 
+  const apiV1 = Router();
+  apiV1.use("/auth", withSession, authRoutes);
+  apiV1.use("/users", withSession, requireAuth, userRoutes);
+  apiV1.use("/jobs", withSession, requireAuth, jobsRoutes);
+  apiV1.use("/keywords", withSession, requireAuth, keywordsRoutes);
+  apiV1.use("/notifications", withSession, requireAuth, notificationsRoutes);
+  apiV1.use("/saved-jobs", withSession, requireAuth, savedJobsRoutes);
+  apiV1.use("/admin", withSession, supportRoutes);
+  apiV1.use("/admin", withSession, adminRoutes);
+  apiV1.use("/admin", withSession, superAdminRoutes);
+
+  app.use("/api/v1", apiV1);
+
+  // Compatibilidade temporária para clientes ainda não migrados para /api/v1.
   app.use("/auth", withSession, authRoutes);
   // Rota pública, token-autenticada — sem withSession/requireAuth (NEWSL-13/14).
   app.use("/newsletter", newsletterRoutes);
@@ -50,17 +64,9 @@ export function createJobsApiApp() {
   app.use("/admin", withSession, adminRoutes);
   app.use("/admin", withSession, superAdminRoutes);
 
-  /**
-   * @swagger
-   * /health:
-   *   get:
-   *     summary: Verifica se a API está online
-   *     tags: [System]
-   *     responses:
-   *       200:
-   *         description: API funcionando
-   */
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  const healthHandler = (_req: Request, res: Response) => res.json({ ok: true });
+  app.get("/api/v1/health", healthHandler);
+  app.get("/health", healthHandler);
 
   app.get("/metrics", async (_req, res) => {
     res.set("Content-Type", register.contentType);

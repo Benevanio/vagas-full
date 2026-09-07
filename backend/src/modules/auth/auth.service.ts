@@ -69,7 +69,7 @@ export class AuthService {
     try {
       await emailService.sendWelcome({
         email: user.email,
-        name: user.displayName ?? user.username,
+        name: user.displayName ?? user.username ?? "Usuário",
       });
     } catch (error) {
       logError("Falha ao disparar e-mail de boas-vindas no login social.", {

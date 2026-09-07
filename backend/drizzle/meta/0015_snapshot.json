@@ -1,6 +1,6 @@
 {
-  "id": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
-  "prevId": "979ff559-fdaa-4fd2-ad0e-00019bbbd23e",
+  "id": "3ed3ff7a-c512-438f-9887-30e2959254ae",
+  "prevId": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -570,6 +570,115 @@
         "keywords_user_id_users_id_fk": {
           "name": "keywords_user_id_users_id_fk",
           "tableFrom": "keywords",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.newsletter_sends": {
+      "name": "newsletter_sends",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iso_week": {
+          "name": "iso_week",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_job_ids": {
+          "name": "sent_job_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "newsletter_sends_user_id_iso_week_unique": {
+          "name": "newsletter_sends_user_id_iso_week_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "iso_week",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "newsletter_sends_user_id_created_at_idx": {
+          "name": "newsletter_sends_user_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "newsletter_sends_user_id_users_id_fk": {
+          "name": "newsletter_sends_user_id_users_id_fk",
+          "tableFrom": "newsletter_sends",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"

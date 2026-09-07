@@ -7,7 +7,6 @@ CREATE TABLE "newsletter_sends" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "user_preferences" ALTER COLUMN "remote_only" SET DEFAULT false;--> statement-breakpoint
 ALTER TABLE "newsletter_sends" ADD CONSTRAINT "newsletter_sends_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "newsletter_sends_user_id_iso_week_unique" ON "newsletter_sends" USING btree ("user_id","iso_week");--> statement-breakpoint
 CREATE INDEX "newsletter_sends_user_id_created_at_idx" ON "newsletter_sends" USING btree ("user_id","created_at");
