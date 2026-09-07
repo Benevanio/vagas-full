@@ -43,6 +43,7 @@ func TestRunExecutesMultipleTasksSequentiallyWhenGlobalLimitIsOne(t *testing.T) 
 		},
 		1,
 		nil,
+		defaultProcessConfig(),
 	)
 
 	require.NoError(t, err)
@@ -77,6 +78,7 @@ func TestRunReleasesPermitsAfterSuccessErrorAndCancellation(t *testing.T) {
 			},
 			1,
 			nil,
+			defaultProcessConfig(),
 		)
 
 		require.NoError(t, err)
@@ -105,6 +107,7 @@ func TestRunReleasesPermitsAfterSuccessErrorAndCancellation(t *testing.T) {
 				},
 				1,
 				nil,
+				defaultProcessConfig(),
 			)
 			done <- err
 		}()
@@ -176,6 +179,7 @@ func TestRunWaitsForProducerAndWorkersAfterSuccessErrorAndCancellation(t *testin
 				},
 				1,
 				nil,
+				defaultProcessConfig(),
 			)
 			if tc.cancel {
 				require.ErrorIs(t, err, runlock.ErrLost)
@@ -220,6 +224,7 @@ func TestRunCancelsProducerBlockedByBackpressureWithoutStartingNewTasks(t *testi
 			},
 			1,
 			nil,
+			defaultProcessConfig(),
 		)
 		done <- err
 	}()

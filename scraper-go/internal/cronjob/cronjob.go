@@ -28,6 +28,9 @@ type Config struct {
 	MaxConcurrency               int
 	ProviderMaxConcurrency       int
 	ProviderConcurrencyOverrides map[ports.ProviderID]int
+	ClassificationBatchSize      int
+	PersistBatchSize             int
+	IndexBatchSize               int
 }
 
 func DefaultConfig() Config {
@@ -41,6 +44,9 @@ func DefaultConfig() Config {
 		MaxConcurrency:               config.DefaultMaxConcurrency,
 		ProviderMaxConcurrency:       config.DefaultProviderMaxConcurrency,
 		ProviderConcurrencyOverrides: make(map[ports.ProviderID]int),
+		ClassificationBatchSize:      config.DefaultClassificationBatchSize,
+		PersistBatchSize:             config.DefaultPersistBatchSize,
+		IndexBatchSize:               config.DefaultIndexBatchSize,
 	}
 }
 
@@ -239,7 +245,7 @@ func (s *Scheduler) runWithLease(lease *runlock.Lease) (runErr error) {
 		return fmt.Errorf("cronjob: load keywords: %w", err)
 	}
 
-	config := s.searchConfig(kws)
+	config := s.searchConfig(kws, lease.RunID())
 	slog.Info("scraper execução iniciada",
 		"source", lease.State().Source,
 		"run_id", lease.RunID(),
@@ -259,19 +265,6 @@ func (s *Scheduler) runWithLease(lease *runlock.Lease) (runErr error) {
 		return err
 	}
 
-	// Salva apenas vagas novas
-	saved, err := s.jobStore.SaveBatch(scrapeCtx, jobs)
-	if err != nil {
-		slog.Error("cronjob: erro ao salvar vagas", "error", err)
-		return fmt.Errorf("cronjob: save jobs: %w", err)
-	}
-	if err := executionError(scrapeCtx); err != nil {
-		return err
-	}
-
-	// ✅ Constrói o índice invertido para buscas por keyword
-	pipeline.IndexJobsInValkey(scrapeCtx, s.rdb, jobs, kws)
-
 	s.mu.Lock()
 	s.lastRunAt = time.Now()
 	s.lastJobs = len(jobs)
@@ -280,18 +273,17 @@ func (s *Scheduler) runWithLease(lease *runlock.Lease) (runErr error) {
 	slog.Info("cronjob: execução concluída",
 		"duration", time.Since(start).Round(time.Second),
 		"scraped", len(jobs),
-		"new_saved", saved,
-		"skipped", len(jobs)-saved,
+		"run_id", lease.RunID(),
 		"next_run", time.Now().Add(s.cfg.Interval).Format(time.Kitchen),
 	)
 
 	if s.OnComplete != nil {
-		s.OnComplete(kws, len(jobs), saved, time.Since(start))
+		s.OnComplete(kws, len(jobs), len(jobs), time.Since(start))
 	}
 	return nil
 }
 
-func (s *Scheduler) searchConfig(kws []string) pipeline.SearchConfig {
+func (s *Scheduler) searchConfig(kws []string, runID string) pipeline.SearchConfig {
 	return pipeline.SearchConfig{
 		Keywords:                     kws,
 		SearchLocation:               s.cfg.SearchLocation,
@@ -301,6 +293,10 @@ func (s *Scheduler) searchConfig(kws []string) pipeline.SearchConfig {
 		MaxConcurrency:               s.cfg.MaxConcurrency,
 		ProviderMaxConcurrency:       s.cfg.ProviderMaxConcurrency,
 		ProviderConcurrencyOverrides: s.cfg.ProviderConcurrencyOverrides,
+		RunID:                        runID,
+		ClassificationBatchSize:      s.cfg.ClassificationBatchSize,
+		PersistBatchSize:             s.cfg.PersistBatchSize,
+		IndexBatchSize:               s.cfg.IndexBatchSize,
 	}
 }
 

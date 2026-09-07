@@ -299,7 +299,7 @@ Aplicados a todas as respostas:
 
 - `goScraper.ts` faz POST em `${GO_SCRAPER_URL}/scrape` com `ScrapeParams` e valida `ScrapeResponse`.
 - `goKeywords.ts` consulta e publica keywords via endpoints do serviço Go (`/api/keywords`).
-- O backend lê os índices criados pelo scraper no Valkey, incluindo `scraper:jobs:keyword:*`, `scraper:jobs:family:*`, `scraper:jobs:technology:*` e `scraper:jobs:seniority:*`.
+- O backend lê o catálogo de vagas e os índices criados pelo scraper no Valkey (`scraper:job:{id}`, `scraper:jobs:keyword:*`, `scraper:jobs:family:*`, `scraper:jobs:technology:*` e `scraper:jobs:seniority:*`). O PostgreSQL não armazena o catálogo coletado; `saved_jobs` são vagas salvas pelo usuário. A indexação invertida só é atualizada depois que o scraper confirma a persistência do documento da vaga.
 - Disparos administrativos usam `scraperClient` e preservam os códigos operacionais do serviço Go. O código `SCRAPER_ALREADY_RUNNING` é um conflito esperado; `SCRAPER_RUN_LOCK_UNAVAILABLE` indica política fail-closed e não inicia coleta.
 
 ## Banco de dados

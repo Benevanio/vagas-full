@@ -111,6 +111,9 @@ func searchConfigFromRuntime(
 		MaxConcurrency:               config.ResolveEffectiveConcurrency(req.MaxConcurrency, runtimeCfg.MaxConcurrency),
 		ProviderMaxConcurrency:       min(runtimeCfg.ProviderMaxConcurrency, config.ResolveEffectiveConcurrency(req.MaxConcurrency, runtimeCfg.MaxConcurrency)),
 		ProviderConcurrencyOverrides: runtimeCfg.ProviderConcurrencyOverrides,
+		ClassificationBatchSize:      runtimeCfg.ClassificationBatchSize,
+		PersistBatchSize:             runtimeCfg.PersistBatchSize,
+		IndexBatchSize:               runtimeCfg.IndexBatchSize,
 	}
 }
 
