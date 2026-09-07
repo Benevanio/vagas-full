@@ -36,6 +36,14 @@ export const updateProfileSchema = z
   })
   .partial();
 
+export const requestEmailChangeSchema = z.object({
+  email: z.string().trim().email().max(254),
+});
+
+export const confirmEmailChangeSchema = z.object({
+  token: z.string().min(1).max(512),
+});
+
 // ── Preferences ───────────────────────────────────────────────────────────────
 
 const jobTypePreferenceSchema = z.enum(["Remoto", "Híbrido", "Presencial"]);

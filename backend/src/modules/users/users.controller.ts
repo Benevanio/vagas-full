@@ -4,9 +4,13 @@ import { AppError } from "../../lib/errors";
 import { sessionOptions } from "../../lib/session";
 import { Session } from "../types/auth.types";
 import { UsersService } from "./users.service";
+import { EmailChangeService } from "./emailChange.service";
 
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly emailChangeService = new EmailChangeService(),
+  ) {}
 
   private async getSession(req: Request, res: Response) {
     return getIronSession<Session>(req, res, sessionOptions);
@@ -35,6 +39,12 @@ export class UsersController {
     const userId = await this.requireUserId(req, res);
     const updated = await this.usersService.updateProfile(userId, req.body);
     return res.json(updated);
+  }
+
+  async requestEmailChange(req: Request, res: Response) {
+    const userId = await this.requireUserId(req, res);
+    await this.emailChangeService.request(userId, req.body.email);
+    return res.status(204).end();
   }
 
   // GET /api/users/preferences

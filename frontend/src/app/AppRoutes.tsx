@@ -1,6 +1,7 @@
 import NotFound from "@/app/NotFound";
 import { useAuth } from "@/domains/auth/application/AuthContext";
 import AuthCallbackPage from "@/domains/auth/presentation/pages/AuthCallbackPage";
+import ConfirmEmailChangePage from "@/domains/auth/presentation/pages/ConfirmEmailChangePage";
 import LoginPage from "@/domains/auth/presentation/pages/LoginPage";
 import RegisterPage from "@/domains/auth/presentation/pages/RegisterPage";
 import LandingPage from "@/domains/marketing/presentation/pages/LandingPage";
@@ -67,6 +68,7 @@ export function AppRoutes() {
         }
       />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/confirmar-email" element={<ConfirmEmailChangePage />} />
       <Route
         path="/politica-de-privacidade"
         element={<PrivacyPolicyPage />}

@@ -11,10 +11,23 @@ const mockUsersService = vi.hoisted(() => ({
   updatePreferences: vi.fn(),
 }));
 
+const mockEmailChangeService = vi.hoisted(() => ({
+  request: vi.fn(),
+  confirm: vi.fn(),
+}));
+
 vi.mock("../../../src/modules/users/users.service", () => ({
   UsersService: class {
     constructor() {
       return mockUsersService;
+    }
+  },
+}));
+
+vi.mock("../../../src/modules/users/emailChange.service", () => ({
+  EmailChangeService: class {
+    constructor() {
+      return mockEmailChangeService;
     }
   },
 }));
@@ -84,8 +97,41 @@ describe("Integration - Users Routes", () => {
       userId: "user_abc",
       remoteOnly: false,
     });
+    mockEmailChangeService.request.mockResolvedValue(undefined);
 
     app = createJobsApiApp();
+  });
+
+  describe("POST /email-change", () => {
+    it("solicita a confirmação para o usuário autenticado", async () => {
+      await request(app)
+        .post(`${BASE}/email-change`)
+        .send({ email: "novo@teste.com" })
+        .expect(204);
+
+      expect(mockEmailChangeService.request).toHaveBeenCalledWith(
+        "user_abc",
+        "novo@teste.com",
+      );
+    });
+
+    it("retorna 400 para e-mail inválido", async () => {
+      await request(app)
+        .post(`${BASE}/email-change`)
+        .send({ email: "invalido" })
+        .expect(400);
+
+      expect(mockEmailChangeService.request).not.toHaveBeenCalled();
+    });
+
+    it("retorna 401 sem autenticação", async () => {
+      vi.mocked(getIronSession).mockResolvedValueOnce({} as any);
+
+      await request(app)
+        .post(`${BASE}/email-change`)
+        .send({ email: "novo@teste.com" })
+        .expect(401);
+    });
   });
 
   // ── GET /profile ──────────────────────────────────────────────────────────

@@ -193,6 +193,14 @@ export async function updateUserProfile(profile: UserProfile) {
   return toUserProfile(data);
 }
 
+export async function requestEmailChange(email: string) {
+  await api.post("/users/email-change", { email });
+}
+
+export async function confirmEmailChange(token: string) {
+  await api.post("/auth/email-change/confirm", { token });
+}
+
 export async function getUserPreferences() {
   const { data } = await api.get<ApiSearchPreferences>("/users/preferences");
   return toSearchPreferences(data);

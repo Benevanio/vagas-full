@@ -127,8 +127,8 @@ export function ProfileForm({
         <Field label="E-mail ">
           <input
             value={userProfile.email}
-            onChange={(event) => updateField("email", event.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring"
+            readOnly
+            className="h-10 w-full rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground outline-none"
           />
         </Field>
         <Field label="Contato">

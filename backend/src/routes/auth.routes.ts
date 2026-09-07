@@ -12,6 +12,8 @@ import { AuthService } from "../modules/auth/auth.service";
 import { ConnectionsController } from "../modules/auth/connections.controller";
 import { CredentialsController } from "../modules/auth/credentials.controller";
 import { CredentialsService } from "../modules/auth/credentials.service";
+import { EmailChangeService } from "../modules/users/emailChange.service";
+import { confirmEmailChangeSchema } from "../modules/users/schemas/user.schemas";
 import { OAuthProviderSchema } from "../modules/types/auth.types";
 import {
     LoginSchema,
@@ -25,6 +27,7 @@ const authController = new AuthController(authService);
 const credentialsService = new CredentialsService();
 const credentialsController = new CredentialsController(credentialsService);
 const connectionsController = new ConnectionsController();
+const emailChangeService = new EmailChangeService();
 
 const providerParamsSchema = z.object({
   provider: OAuthProviderSchema,
@@ -75,6 +78,15 @@ router.post("/logout", (req, res, next) => {
 router.get("/me", (req, res, next) => {
   credentialsController.me(req, res).catch(next);
 });
+router.post(
+  "/email-change/confirm",
+  validate({ body: confirmEmailChangeSchema }),
+  (req, res, next) => {
+    emailChangeService
+      .confirm(req.body.token)
+      .then(() => res.status(204).end())
+      .catch(next);
+  },
+);
 
 export { router as authRoutes };
-

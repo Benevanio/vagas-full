@@ -4,6 +4,7 @@ import { UsersController } from "../modules/users/users.controller";
 import { UsersService } from "../modules/users/users.service";
 import {
   createPreferencesSchema,
+  requestEmailChangeSchema,
   updatePreferencesSchema,
   updateProfileSchema,
 } from "../modules/users/schemas/user.schemas";
@@ -20,6 +21,13 @@ router.patch(
   validate({ body: updateProfileSchema }),
   (req, res, next) => {
     usersController.updateProfile(req, res).catch(next);
+  },
+);
+router.post(
+  "/email-change",
+  validate({ body: requestEmailChangeSchema }),
+  (req, res, next) => {
+    usersController.requestEmailChange(req, res).catch(next);
   },
 );
 router.get("/preferences", (req, res, next) => {

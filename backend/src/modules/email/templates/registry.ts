@@ -1,6 +1,10 @@
 import { render } from "@react-email/render";
 import * as React from "react";
 import { AppError } from "../../../lib/errors";
+import {
+  EmailChangeConfirmation,
+  EmailChangeConfirmationProps,
+} from "./emailChangeConfirmation";
 import { Welcome, WelcomeProps } from "./welcome";
 
 /**
@@ -11,6 +15,10 @@ const templates = {
   welcome: {
     subject: "Bem-vindo ao Candidate",
     component: Welcome,
+  },
+  emailChangeConfirmation: {
+    subject: "Confirme seu novo e-mail no Candidate",
+    component: EmailChangeConfirmation,
   },
 } satisfies Record<
   string,
@@ -24,6 +32,7 @@ export type TemplateName = keyof typeof templates;
  */
 export interface TemplateDataMap {
   welcome: WelcomeProps;
+  emailChangeConfirmation: EmailChangeConfirmationProps;
 }
 
 export function isTemplate(name: string): name is TemplateName {

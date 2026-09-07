@@ -101,6 +101,17 @@ describe("EmailService", () => {
 
       expect(loggerMocks.logError).toHaveBeenCalled();
     });
+
+    it("propaga falha do enqueue quando o envio é obrigatório", async () => {
+      queueMocks.enqueueEmail.mockRejectedValue(new Error("valkey down"));
+
+      await expect(
+        service.send(
+          { template: "welcome", to: "user@example.com", data: {} },
+          { throwOnEnqueueFailure: true },
+        ),
+      ).rejects.toThrow("valkey down");
+    });
   });
 
   describe("sendWelcome", () => {
@@ -114,6 +125,24 @@ describe("EmailService", () => {
         template: "welcome",
         to: "user@example.com",
         data: { name: "Ana", appUrl: "https://painelvagas.com" },
+      });
+    });
+  });
+
+  describe("sendEmailChangeConfirmation", () => {
+    it("usa o template centralizado e inclui o token na URL do frontend", async () => {
+      await service.sendEmailChangeConfirmation({
+        email: "novo@example.com",
+        token: "token-seguro",
+      });
+
+      expect(queueMocks.enqueueEmail).toHaveBeenCalledWith({
+        template: "emailChangeConfirmation",
+        to: "novo@example.com",
+        data: {
+          confirmationUrl:
+            "https://painelvagas.com/confirmar-email?token=token-seguro",
+        },
       });
     });
   });

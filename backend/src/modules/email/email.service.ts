@@ -18,7 +18,10 @@ export interface SendEmailInput {
  * falha de enqueue (ex.: Valkey down) é logada e engolida (EMAIL-05/10).
  */
 export class EmailService {
-  async send({ template, to, data }: SendEmailInput): Promise<void> {
+  async send(
+    { template, to, data }: SendEmailInput,
+    options: { throwOnEnqueueFailure?: boolean } = {},
+  ): Promise<void> {
     if (!EMAIL_REGEX.test(to)) {
       throw AppError.validation(`E-mail de destino inválido: ${to}`);
     }
@@ -35,6 +38,7 @@ export class EmailService {
         to,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (options.throwOnEnqueueFailure) throw error;
     }
   }
 
@@ -56,6 +60,29 @@ export class EmailService {
       to: email,
       data: { name, appUrl: frontendUrl },
     });
+  }
+
+  async sendEmailChangeConfirmation({
+    email,
+    token,
+    required = false,
+  }: {
+    email: string;
+    token: string;
+    required?: boolean;
+  }): Promise<void> {
+    const { frontendUrl } = getConfig();
+    const confirmationUrl = new URL("/confirmar-email", frontendUrl);
+    confirmationUrl.searchParams.set("token", token);
+
+    await this.send(
+      {
+        template: "emailChangeConfirmation",
+        to: email,
+        data: { confirmationUrl: confirmationUrl.toString() },
+      },
+      { throwOnEnqueueFailure: required },
+    );
   }
 }
 
