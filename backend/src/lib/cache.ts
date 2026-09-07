@@ -444,10 +444,16 @@ export async function cacheClearJobs(): Promise<{
   return { deleted, patterns };
 }
 
-export async function cachePing(): Promise<string> {
+export type CachePingOptions = {
+  signal?: AbortSignal;
+};
+
+export async function cachePing(
+  { signal }: CachePingOptions = {},
+): Promise<string> {
   const client = await getCache();
   try {
-    const result = await client.ping();
+    const result = await (signal ? client.withAbortSignal(signal) : client).ping();
     recordCacheOperation("ping", "ok");
     return result;
   } catch (error) {

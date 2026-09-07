@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   cacheAbsoluteSMembers: vi.fn(),
   cacheGetJobsByIds: vi.fn(),
   getCache: vi.fn(),
+  cachePing: vi.fn(),
+  poolQuery: vi.fn(),
+  poolConnect: vi.fn(),
+  clientRelease: vi.fn(),
   publish: vi.fn(),
   logWarn: vi.fn(),
   parsePagination: vi.fn(),
@@ -27,6 +31,7 @@ vi.mock("../../src/lib/cache.js", () => ({
   cacheAbsoluteSMembers: mocks.cacheAbsoluteSMembers,
   cacheGetJobsByIds: mocks.cacheGetJobsByIds,
   getCache: mocks.getCache,
+  cachePing: mocks.cachePing,
 }));
 
 vi.mock("../../src/lib/kwsync.js", () => ({
@@ -39,6 +44,7 @@ vi.mock("../../src/lib/pagination.js", () => ({
 }));
 
 vi.mock("../../src/db/client.js", () => ({
+  pool: { query: mocks.poolQuery, connect: mocks.poolConnect },
   db: {
     select: () => ({
       from: () => ({
@@ -148,6 +154,13 @@ describe("jobsApiApp", () => {
     mocks.getUserById.mockResolvedValue(null);
     mocks.createHighMatchIfMissing.mockResolvedValue(undefined);
     mocks.getCache.mockResolvedValue({ lPush: vi.fn() });
+    mocks.cachePing.mockResolvedValue("PONG");
+    mocks.poolQuery.mockResolvedValue({ rows: [{ "?column?": 1 }] });
+    mocks.clientRelease.mockReset();
+    mocks.poolConnect.mockResolvedValue({
+      query: mocks.poolQuery,
+      release: mocks.clientRelease,
+    });
     mocks.publish.mockResolvedValue(undefined);
   });
 
@@ -158,6 +171,58 @@ describe("jobsApiApp", () => {
     const res = await request(app).get("/health").expect(200);
     expect(res.body).toEqual({ ok: true });
   });
+
+  it("GET /ready confirma banco e Valkey disponíveis", async () => {
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(200);
+
+    expect(res.body).toEqual({ ok: true });
+    expect(mocks.poolQuery).toHaveBeenCalledWith("SELECT 1");
+    // A query roda com limite na própria conexão e ela volta limpa ao pool.
+    expect(mocks.poolQuery).toHaveBeenCalledWith(
+      expect.stringContaining("SET statement_timeout"),
+    );
+    expect(mocks.clientRelease).toHaveBeenCalledWith(false);
+    expect(mocks.cachePing).toHaveBeenCalledOnce();
+  });
+
+  it("GET /ready retorna indisponível quando uma dependência falha", async () => {
+    mocks.cachePing.mockRejectedValueOnce(new Error("Valkey indisponível"));
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(503);
+
+    expect(res.body).toEqual({ ok: false });
+  });
+
+  it("GET /ready retorna indisponível quando uma dependência fica pendurada", async () => {
+    // Query pendurada: a probe desiste, mas a conexão não pode voltar ao pool.
+    mocks.poolQuery.mockImplementation(() => new Promise(() => {}));
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false });
+  }, 4_000);
+
+  it("GET /ready aborta o PING do Valkey quando a probe expira", async () => {
+    let signal: AbortSignal | undefined;
+    mocks.cachePing.mockImplementation(
+      ({ signal: requestSignal }: { signal?: AbortSignal }) => {
+        signal = requestSignal;
+        return new Promise((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () =>
+            reject(new Error("Valkey readiness timed out")),
+          );
+        });
+      },
+    );
+
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(503);
+
+    expect(res.body).toEqual({ ok: false });
+    expect(signal?.aborted).toBe(true);
+  }, 4_000);
 
   it("GET /api/v1/health retorna ok", async () => {
     const app = createJobsApiApp();

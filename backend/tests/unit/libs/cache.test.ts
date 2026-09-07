@@ -7,6 +7,7 @@ import {
   cacheGet,
   cacheGetJobsByIds,
   cacheJobIndexKeys,
+  cachePing,
   cacheClearJobs,
   cacheSearchJobIds,
   cacheSearchKeywords,
@@ -50,6 +51,8 @@ vi.mock("redis", () => {
     sendCommand: vi.fn(),
     expire: vi.fn(),
     mGet: vi.fn(),
+    ping: vi.fn(),
+    withAbortSignal: vi.fn(),
   };
   return {
     createClient: vi.fn(() => mockClient),
@@ -186,6 +189,21 @@ describe("Valkey Cache Lib", () => {
         "scraper:jobs:index",
       );
       expect(result).toBe(42);
+    });
+  });
+
+  describe("Readiness", () => {
+    it("associa o sinal de cancelamento ao PING quando informado", async () => {
+      const controller = new AbortController();
+      const abortableClient = { ping: vi.fn().mockResolvedValue("PONG") };
+      mockClientInstance.withAbortSignal.mockReturnValue(abortableClient);
+
+      await expect(cachePing({ signal: controller.signal })).resolves.toBe("PONG");
+
+      expect(mockClientInstance.withAbortSignal).toHaveBeenCalledWith(
+        controller.signal,
+      );
+      expect(abortableClient.ping).toHaveBeenCalledOnce();
     });
   });
 

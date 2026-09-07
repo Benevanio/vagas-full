@@ -1,11 +1,14 @@
 import "dotenv/config";
 import { createJobsApiApp } from "./app";
+import { initErrorTracking } from "./errorTracking";
 import { closeCache } from "./lib/cache";
 import { logError, logInfo, logWarn } from "./logger";
 import { closeEmailQueue } from "./modules/email/email.queue";
 import { startEmailWorker, stopEmailWorker } from "./modules/email/email.worker";
 
 const PORT = Number(process.env.PORT ?? 3001);
+
+initErrorTracking();
 
 const app = createJobsApiApp();
 app.set("trust proxy", 1);

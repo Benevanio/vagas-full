@@ -263,6 +263,17 @@ Base: /
 Sistema:
 
 - GET /health
+- GET /ready
+- GET /metrics
+
+`/health` verifica se o processo está no ar. `/ready` confirma a conexão com
+Postgres e Valkey e retorna `503` enquanto alguma dessas dependências estiver
+indisponível. `/metrics` expõe métricas Prometheus; logs são emitidos em JSON e
+incluem `requestId` nos erros inesperados.
+
+Para enviar exceções não tratadas ao Sentry, defina `SENTRY_DSN` no ambiente.
+Sem essa variável, o error tracking externo fica desativado e o backend segue
+operando com logs estruturados locais.
 
 Autenticação:
 

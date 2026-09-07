@@ -1,5 +1,7 @@
 import cors from "cors";
 import express, { NextFunction, Request, Response, Router } from "express";
+import { pool } from "./db/client";
+import { cachePing } from "./lib/cache";
 import { register } from "./metrics/metrics";
 import { corsOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/errorHandler";
@@ -17,6 +19,41 @@ import { savedJobsRoutes } from "./routes/savedJobs.routes";
 import superAdminRoutes from "./routes/superAdmin.routes";
 import supportRoutes from "./routes/support.routes";
 import { userRoutes } from "./routes/users.routes";
+
+/**
+ * Checagem de banco do /ready com limite real: o `statement_timeout` é
+ * aplicado na própria conexão, então o Postgres aborta a query quando estoura
+ * — em vez de ela seguir rodando depois que a probe já desistiu. Se algo falhar
+ * no meio, a conexão é descartada em vez de voltar suja para o pool.
+ */
+async function checkDatabase(timeoutMs: number): Promise<void> {
+  const client = await pool.connect();
+  let ok = false;
+  try {
+    await client.query(`SET statement_timeout = ${Number(timeoutMs)}`);
+    await client.query("SELECT 1");
+    await client.query("SET statement_timeout = DEFAULT");
+    ok = true;
+  } finally {
+    client.release(!ok);
+  }
+}
+
+/**
+ * O node-redis permite cancelar um comando individual via AbortSignal. Assim,
+ * uma probe expirada não deixa o PING aguardando no cliente de Valkey.
+ */
+async function checkCache(timeoutMs: number): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    await cachePing({ signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
 
 export function createJobsApiApp() {
   const app = express();
@@ -64,6 +101,35 @@ export function createJobsApiApp() {
   const healthHandler = (_req: Request, res: Response) => res.json({ ok: true });
   app.get("/api/v1/health", healthHandler);
   app.get("/health", healthHandler);
+
+  app.get("/ready", async (_req, res, next) => {
+    try {
+      const readinessTimeoutMs = 2_000;
+      const withTimeout = <T>(promise: Promise<T>): Promise<T> => {
+        let timeout: ReturnType<typeof setTimeout>;
+        const timeoutPromise = new Promise<T>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Readiness check timed out")),
+            readinessTimeoutMs,
+          );
+        });
+
+        return Promise.race([promise, timeoutPromise]).finally(() =>
+          clearTimeout(timeout),
+        );
+      };
+
+      const checks = await Promise.allSettled([
+        withTimeout(checkDatabase(readinessTimeoutMs)),
+        withTimeout(checkCache(readinessTimeoutMs)),
+      ]);
+      const ready = checks.every((check) => check.status === "fulfilled");
+
+      res.status(ready ? 200 : 503).json({ ok: ready });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get("/metrics", async (_req, res) => {
     res.set("Content-Type", register.contentType);
