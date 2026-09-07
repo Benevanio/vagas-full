@@ -39,6 +39,22 @@ async function checkDatabase(timeoutMs: number): Promise<void> {
   }
 }
 
+/**
+ * O node-redis permite cancelar um comando individual via AbortSignal. Assim,
+ * uma probe expirada não deixa o PING aguardando no cliente de Valkey.
+ */
+async function checkCache(timeoutMs: number): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    await cachePing({ signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
+
 export function createJobsApiApp() {
   const app = express();
 
@@ -105,7 +121,7 @@ export function createJobsApiApp() {
 
       const checks = await Promise.allSettled([
         withTimeout(checkDatabase(readinessTimeoutMs)),
-        withTimeout(cachePing()),
+        withTimeout(checkCache(readinessTimeoutMs)),
       ]);
       const ready = checks.every((check) => check.status === "fulfilled");
 

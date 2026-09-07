@@ -204,6 +204,26 @@ describe("jobsApiApp", () => {
     expect(res.body).toEqual({ ok: false });
   }, 4_000);
 
+  it("GET /ready aborta o PING do Valkey quando a probe expira", async () => {
+    let signal: AbortSignal | undefined;
+    mocks.cachePing.mockImplementation(
+      ({ signal: requestSignal }: { signal?: AbortSignal }) => {
+        signal = requestSignal;
+        return new Promise((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () =>
+            reject(new Error("Valkey readiness timed out")),
+          );
+        });
+      },
+    );
+
+    const app = createJobsApiApp();
+    const res = await request(app).get("/ready").expect(503);
+
+    expect(res.body).toEqual({ ok: false });
+    expect(signal?.aborted).toBe(true);
+  }, 4_000);
+
   it("GET /api/v1/health retorna ok", async () => {
     const app = createJobsApiApp();
     const res = await request(app).get("/api/v1/health").expect(200);
