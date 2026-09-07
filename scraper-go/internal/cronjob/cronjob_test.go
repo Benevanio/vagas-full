@@ -78,16 +78,24 @@ func TestDefaultConfigUsesSafeMaxConcurrency(t *testing.T) {
 	cfg := DefaultConfig()
 
 	assert.Equal(t, 12, cfg.MaxConcurrency)
+	assert.Equal(t, 2, cfg.ProviderMaxConcurrency)
+	assert.Empty(t, cfg.ProviderConcurrencyOverrides)
 }
 
 func TestSchedulerSearchConfigReceivesGlobalMaxConcurrency(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.MaxConcurrency = 9
+	cfg.ProviderMaxConcurrency = 3
+	cfg.ProviderConcurrencyOverrides = map[ports.ProviderID]int{
+		ports.ProviderGupy: 4,
+	}
 
 	scheduler := New(cfg, nil, nil, nil, nil, nil)
 	searchConfig := scheduler.searchConfig([]string{"go"})
 
 	assert.Equal(t, 9, searchConfig.MaxConcurrency)
+	assert.Equal(t, 3, searchConfig.ProviderMaxConcurrency)
+	assert.Equal(t, 4, searchConfig.ProviderConcurrencyOverrides[ports.ProviderGupy])
 	assert.Equal(t, []string{"go"}, searchConfig.Keywords)
 }
 
