@@ -10,7 +10,7 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    command: sh -c "npm run db:migrate && npm run security:backfill-user-pii -- --write"
+    command: sh -c "npm run db:migrate && npm run db:seed && npm run security:backfill-user-pii -- --write"
     depends_on:
       postgres:
         condition: service_healthy
