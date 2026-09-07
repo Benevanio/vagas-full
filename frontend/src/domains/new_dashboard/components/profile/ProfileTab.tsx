@@ -2,6 +2,7 @@ import type { SearchPreferences, UserProfile } from "../../types";
 import { ConnectionsForm } from "./ConnectionsForm";
 import { PreferencesForm } from "./PreferencesForm";
 import { ProfileForm } from "./ProfileForm";
+import { SessionsForm } from "./SessionsForm";
 
 interface ProfileTabProps {
   userProfile: UserProfile;
@@ -39,6 +40,7 @@ export function ProfileTab({
         onSave={onSavePreferences}
       />
       <ConnectionsForm />
+      <SessionsForm />
     </div>
   );
 }

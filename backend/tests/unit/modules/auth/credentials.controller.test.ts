@@ -8,6 +8,7 @@ describe("CredentialsController", () => {
   let controller: CredentialsController;
   let reqMock: any;
   let resMock: Partial<Response>;
+  let sessionsMock: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,13 +29,18 @@ describe("CredentialsController", () => {
       }),
     };
 
-    controller = new CredentialsController(serviceMock);
+    sessionsMock = {
+      create: vi.fn().mockResolvedValue({ id: "session_123" }),
+      revoke: vi.fn().mockResolvedValue(true),
+    };
+    controller = new CredentialsController(serviceMock, sessionsMock);
 
     reqMock = {
       body: {},
       session: {
         userId: undefined,
         role: undefined,
+        sessionId: undefined,
         save: vi.fn().mockResolvedValue(undefined),
         destroy: vi.fn().mockResolvedValue(undefined),
       },

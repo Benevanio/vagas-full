@@ -5,9 +5,13 @@ import type { OAuthProvider } from "../types/auth.types.js";
 import { AuthCallbackParamsSchema } from "../types/auth.types.js";
 import { linkProviderToUser } from "../users/functions/linkProviderToUser.js";
 import { AuthService } from "./auth.service.js";
+import { SessionService } from "./session.service.js";
 
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly sessions = new SessionService(),
+  ) {}
 
   async getUrl(req: Request, res: Response) {
     const provider = req.params.provider as OAuthProvider;
@@ -86,6 +90,11 @@ export class AuthController {
 
       req.session.userId = result.session.userId;
       req.session.role = result.session.role;
+      const session = await this.sessions.create(result.session.userId, {
+        userAgent: req.get?.("user-agent") ?? undefined,
+        ipAddress: req.ip,
+      });
+      req.session.sessionId = session.id;
       await req.session.save();
 
       return res.redirect(`${frontendUrl}/auth/callback`);
