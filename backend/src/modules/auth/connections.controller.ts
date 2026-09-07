@@ -18,7 +18,10 @@ export class ConnectionsController {
     const userId = req.session.userId as string;
     const provider = req.params.provider;
 
-    if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(provider)) {
+    if (
+      typeof provider !== "string" ||
+      !(SUPPORTED_PROVIDERS as readonly string[]).includes(provider)
+    ) {
       throw AppError.validation("Provider inválido.");
     }
 

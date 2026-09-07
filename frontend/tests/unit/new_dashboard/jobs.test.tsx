@@ -389,7 +389,11 @@ describe("new_dashboard job components", () => {
       />,
     );
 
-    expect(screen.getByText(/payload da vaga/i)).toBeInTheDocument();
+    // PAV-92: "Payload da vaga" virou "Detalhes adicionais" e não duplica
+    // mais campos já representados em outro lugar do detalhe. O `url` de
+    // baseJob.rawPayload é igual a `jobLink` (já mostrado em "Abrir vaga"),
+    // então o bloco não tem nada extra pra mostrar aqui e não renderiza.
+    expect(screen.queryByText(/detalhes adicionais/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /abrir vaga/i })).toHaveAttribute(
       "href",
       baseJob.jobLink,
@@ -508,6 +512,22 @@ describe("new_dashboard job components", () => {
       .toHaveAttribute("href", "http://localhost:3000/vaga");
     expect(container.querySelector("img")).not.toBeInTheDocument();
     expect(screen.getByText("Conteúdo preservado")).toBeInTheDocument();
+  });
+
+  it("não propaga atributos ativos nem protocolos não permitidos", () => {
+    const { container } = render(
+      <FormattedJobDescription
+        description={[
+          '<a href="data:text/html,blocked">Link de dados</a>',
+          '<p onclick="alert(1)">Texto seguro</p>',
+          '<iframe src="https://example.com"></iframe>',
+        ].join("")}
+      />,
+    );
+
+    expect(screen.getByText("Link de dados").tagName).toBe("SPAN");
+    expect(screen.getByText("Texto seguro")).not.toHaveAttribute("onclick");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
   });
 
   it("valida e salva uma vaga manual nova", () => {
