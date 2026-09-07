@@ -106,31 +106,59 @@ export function toUserUpdateValues(data: UpdateProfileData): Partial<User> {
   return values;
 }
 
-export function toPublicUser(
-  user: User,
-): User & { technologyExperiences?: unknown[] | null } {
+type PublicUser = Omit<
+  User,
+  | "emailEncrypted"
+  | "emailHash"
+  | "firstNameEncrypted"
+  | "lastNameEncrypted"
+  | "displayNameEncrypted"
+  | "avatarUrlEncrypted"
+  | "phoneEncrypted"
+  | "cpfEncrypted"
+  | "cpfHash"
+  | "technologiesEncrypted"
+  | "technologyExperiencesEncrypted"
+  | "levelEncrypted"
+> & { technologyExperiences?: unknown[] | null };
+
+export function toPublicUser(user: User): PublicUser {
+  const {
+    emailEncrypted,
+    emailHash,
+    firstNameEncrypted,
+    lastNameEncrypted,
+    displayNameEncrypted,
+    avatarUrlEncrypted,
+    phoneEncrypted,
+    cpfEncrypted,
+    cpfHash,
+    technologiesEncrypted,
+    technologyExperiencesEncrypted,
+    levelEncrypted,
+    ...safeUser
+  } = user;
+
   return {
-    ...user,
-    email: user.emailEncrypted ? decryptText(user.emailEncrypted) : user.email,
-    firstName: user.firstNameEncrypted
-      ? decryptText(user.firstNameEncrypted)
+    ...safeUser,
+    email: emailEncrypted ? decryptText(emailEncrypted) : user.email,
+    firstName: firstNameEncrypted
+      ? decryptText(firstNameEncrypted)
       : user.firstName,
-    lastName: user.lastNameEncrypted
-      ? decryptText(user.lastNameEncrypted)
+    lastName: lastNameEncrypted
+      ? decryptText(lastNameEncrypted)
       : user.lastName,
-    displayName: user.displayNameEncrypted
-      ? decryptText(user.displayNameEncrypted)
+    displayName: displayNameEncrypted
+      ? decryptText(displayNameEncrypted)
       : user.displayName,
-    avatarUrl: user.avatarUrlEncrypted
-      ? decryptText(user.avatarUrlEncrypted)
+    avatarUrl: avatarUrlEncrypted
+      ? decryptText(avatarUrlEncrypted)
       : user.avatarUrl,
-    phone: user.phoneEncrypted ? decryptText(user.phoneEncrypted) : user.phone,
-    cpf: user.cpfEncrypted ? decryptText(user.cpfEncrypted) : user.cpf,
+    phone: phoneEncrypted ? decryptText(phoneEncrypted) : user.phone,
+    cpf: cpfEncrypted ? decryptText(cpfEncrypted) : user.cpf,
     technologies:
-      parseEncryptedArray(user.technologiesEncrypted) ?? user.technologies,
-    technologyExperiences: parseEncryptedArray(
-      user.technologyExperiencesEncrypted,
-    ),
-    level: user.levelEncrypted ? decryptText(user.levelEncrypted) : user.level,
+      parseEncryptedArray(technologiesEncrypted) ?? user.technologies,
+    technologyExperiences: parseEncryptedArray(technologyExperiencesEncrypted),
+    level: levelEncrypted ? decryptText(levelEncrypted) : user.level,
   };
 }

@@ -77,6 +77,12 @@ Exemplos:
 - fix(backend): corrigir metodo da rota jobs search
 - docs(repo): atualizar guia de testes
 
+Quando o commit estiver ligado a um card do Linear, inclua o identificador no fim da descrição (ver [GUIA-LINEAR-GITHUB.md](GUIA-LINEAR-GITHUB.md)):
+
+- docs: cria guia de uso do Linear e integracao com GitHub (PAV-93)
+
+Essa convenção é validada automaticamente pelo hook `commit-msg` (Husky + commitlint, `commitlint.config.cjs`) a cada commit — não é algo para lembrar manualmente.
+
 ## 5. Checklist antes do commit
 
 Executar na raiz:
@@ -98,13 +104,17 @@ npm run db:migrate
 
 O projeto esta preparado para usar Husky com os hooks:
 
-- pre-commit: lint frontend + teste backend
-- pre-push: build frontend
+- pre-commit: `lint-staged` (roda eslint apenas nos arquivos alterados de `frontend/src`)
+- commit-msg: valida a mensagem do commit com `commitlint` (`commitlint.config.cjs`, ver seção 4)
+- pre-push: `npm run validate` (teste do backend + lint do frontend + build do frontend)
 
 Arquivos de hook:
 
 - .husky/pre-commit
+- .husky/commit-msg
 - .husky/pre-push
+
+> **Nota:** o Git não tem um hook que dispare no `git add`. O equivalente automático é o `pre-commit`: ele roda o `lint-staged` sobre exatamente os arquivos que você deu `git add` e está prestes a commitar, toda vez que você roda `git commit`. Ou seja, "rodar a cada `git add .`" na prática significa "rodar a cada commit sobre o que foi adicionado" — e isso já acontece automaticamente, sem nenhuma ação manual.
 
 ### Instalacao inicial
 
@@ -118,10 +128,20 @@ O script prepare configura o Husky automaticamente.
 
 ### Rodar hooks manualmente (debug)
 
+Não há scripts npm dedicados para isso; rode o próprio arquivo de hook:
+
 ```bash
-npm run hook:pre-commit
-npm run hook:pre-push
+sh .husky/pre-commit
+sh .husky/pre-push
 ```
+
+### `--no-verify` é proibido
+
+**Nunca use `git commit --no-verify`, `git push --no-verify` ou qualquer flag equivalente para pular os hooks.** Eles existem justamente para pegar problemas antes de chegarem ao PR (lint, testes, build, formato da mensagem de commit).
+
+Isso não é só uma regra de conduta: como o git não permite bloquear tecnicamente o uso de `--no-verify` no lado do desenvolvedor, o próprio CI (`.github/workflows/ci.yml`, step "Validar mensagens de commit") revalida a mensagem de **todos os commits do PR** com o mesmo `commitlint.config.cjs`. Ou seja, pular o hook local com `--no-verify` só adia o erro — o PR não passa no CI mesmo assim.
+
+Se um hook falhar, corrija o problema (lint, teste, mensagem de commit) em vez de pular a verificação.
 
 ## 7. Regras de Pull Request
 

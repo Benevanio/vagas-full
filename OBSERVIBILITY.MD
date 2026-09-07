@@ -4,10 +4,10 @@ Este documento descreve a observabilidade do projeto Jobs Scraper Global: métri
 
 ## Visão Geral
 
-- Stack principal (primeira escolha): Prometheus (métricas) + Grafana (dashboards) + Loki (logs) + Promtail (ingestão de logs).
-- Stack alternativo presente no repositório: ELK (Elasticsearch + Filebeat + Kibana) — mantido como opção futura.
+- Stack real e operacional (o único que sobe hoje via Docker Compose): Prometheus (métricas) + Grafana (dashboards) + Loki (logs) + Promtail (ingestão de logs) + exporters (Postgres/Redis/node) + cAdvisor + Alertmanager — tudo definido em `docker-compose.observability.yml`.
+- Configs órfãs no repositório (ELK: Elasticsearch + Filebeat + Kibana): existem apenas arquivos de configuração soltos em `observability/elasticsearch`, `observability/kibana` e `observability/filebeat`. **Nenhum desses serviços está declarado em `docker-compose.observability.yml` nem em qualquer outro `docker-compose*.yml`** — não há como "ativar" ELK apenas rodando um comando; seria necessário escrever os serviços do zero no Compose.
 
-> Nota operacional: ELK está presente no repositório, porém a operação atual privilegia Loki/Promtail por exigências de recursos (memória/IO e manutenção). Se houver capacidade de infra suficiente no ambiente de destino, ELK pode ser ativado conforme instruções abaixo.
+> Nota operacional: os arquivos de config de ELK ficam no repositório apenas como referência/planejamento futuro. A stack que roda de fato hoje é Prometheus/Grafana/Loki/Promtail, descrita abaixo.
 
 ## Arquitetura e artefatos no repositório
 
@@ -17,7 +17,7 @@ Este documento descreve a observabilidade do projeto Jobs Scraper Global: métri
   - Grafana provisioning (datasources & dashboards): [observability/grafana/provisioning](observability/grafana/provisioning)
   - Loki: [observability/loki/loki-config.yml](observability/loki/loki-config.yml)
   - Promtail: [observability/promtail/promtail.yml](observability/promtail/promtail.yml) (configuração versionada no repositório)
-  - ELK:
+  - ELK (não wireado a nenhum docker-compose — apenas arquivos de config):
     - Elasticsearch: [observability/elasticsearch/elasticsearch.yml](observability/elasticsearch/elasticsearch.yml)
     - Kibana: [observability/kibana/kibana.yml](observability/kibana/kibana.yml)
     - Filebeat: [observability/filebeat/filebeat.yml](observability/filebeat/filebeat.yml)
@@ -92,7 +92,7 @@ Para usar Promtail com o compose já presente:
 1. O arquivo `observability/promtail/promtail.yml` já está versionado no repositório.
 2. O serviço `promtail` deve montar o arquivo em `/etc/promtail/promtail.yml` e usar o volume nomeado apenas para estado em `/etc/promtail/state`.
 
-Alternativa: continuar com Filebeat → Elasticsearch. O `filebeat.yml` atual usa autodiscover e envia diretamente para `elasticsearch:9200`.
+Alternativa não operacional hoje: Filebeat → Elasticsearch. O `filebeat.yml` está configurado com autodiscover e aponta para `elasticsearch:9200`, mas nenhum dos dois serviços (`filebeat`, `elasticsearch`) é declarado em `docker-compose.observability.yml` — para usar essa alternativa é preciso adicionar os serviços ao compose antes.
 
 ## Dashboards (Grafana)
 
@@ -130,7 +130,7 @@ docker compose -f docker-compose.observability.yml up -d
 - Prometheus UI: <http://localhost:9091> (ou 9090 se mapear 9090:9090)
 - Grafana: <http://localhost:3002>
 - Loki: <http://localhost:3100>
-- Kibana (se optar por ELK): <http://localhost:5601>
+- Kibana: não aplicável hoje — ELK não está declarado em nenhum `docker-compose*.yml` do repositório (ver seção "Visão Geral").
 
 ## Escalabilidade, retenção e custos
 
@@ -151,7 +151,7 @@ docker compose -f docker-compose.observability.yml up -d
 
 - Se logs não aparecerem no Grafana/Loki:
   - Confirme que o `promtail` está em execução, com configuração apontando para `/var/lib/docker/containers/*/*.log` e `url: http://loki:3100`.
-  - Como alternativa, verifique `filebeat` se usando ELK.
+  - `filebeat`/ELK não é uma alternativa operacional hoje (não está no compose) — ver "Visão Geral" acima.
 
 ## Passos recomendados próximos
 

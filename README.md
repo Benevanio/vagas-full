@@ -12,6 +12,7 @@
 [SCRAPER](SCRAPER.md) |
 [BACKEND](BACKEND.md) |
 [TESTING](TESTING.md) |
+[OBSERVABILITY](OBSERVIBILITY.MD) |
 [CONTRIBUTING](contribuition.md) |
 [ESCOPO](ESCOPO.md) |
 [Frontend](frontend/README.md) |
@@ -30,6 +31,7 @@ O produto evoluiu para um modelo orientado a serviços (API + scraper Go + cache
 - Documentação backend detalhada: [BACKEND.md](BACKEND.md)
 - Documentação scraper Go: [SCRAPER.md](SCRAPER.md)
 - Guia de testes: [TESTING.md](TESTING.md)
+- Documentação de observabilidade: [OBSERVIBILITY.MD](OBSERVIBILITY.MD)
 - Documentação inicial do MVP (Visão PO) [ESCOPO.md](ESCOPO.md)
 
 ## Sumário
@@ -73,6 +75,7 @@ Objetivo de produto: fornecer uma base robusta para busca, filtragem e gestão d
 ├─ docker-compose.yml       # App stack (frontend + front_admin + backend + scraper-go)
 ├─ docker-compose.infra.yml # Infra stack (Postgres + Valkey)
 ├─ docker-compose.migrate.yml # Migration job do backend
+├─ docker-compose.observability.yml # Stack de observabilidade (Prometheus/Grafana/Loki)
 └─ .github/workflows/ci.yml # CI
 ```
 
@@ -208,8 +211,6 @@ Os comandos abaixo existem hoje no repositório e foram conferidos nos `package.
 - npm run dev:frontend
 - npm run dev:backend
 - npm run dev:front_admin
-- npm run scraper
-- npm run scraper:watch
 - npm run test
 - npm run test:coverage
 - npm run build
@@ -222,6 +223,7 @@ Os comandos abaixo existem hoje no repositório e foram conferidos nos `package.
 - npm run db:generate
 - npm run db:migrate
 - npm run db:push
+- npm run db:seed
 
 ### Backend
 
@@ -235,6 +237,9 @@ Os comandos abaixo existem hoje no repositório e foram conferidos nos `package.
 - npm run db:generate
 - npm run db:migrate
 - npm run db:push
+- npm run db:seed
+- npm run security:backfill-user-pii
+- npm run clear-cache
 
 ### Frontend
 
@@ -267,8 +272,10 @@ Autenticação:
 
 - GET /auth/:provider/url
 - GET /auth/:provider/callback
+- GET /auth/connections
+- DELETE /auth/connections/:provider
 - POST /auth/register
-- POST /auth/login
+- POST /auth/login (rate limit por IP e por conta)
 - POST /auth/logout
 - GET /auth/me
 
@@ -294,11 +301,28 @@ Saved jobs:
 
 - GET /saved-jobs
 - GET /saved-jobs/:id
+- GET /saved-jobs/:id/events
 - POST /saved-jobs
 - PATCH /saved-jobs/:id
 - DELETE /saved-jobs/:id
 
-Admin:
+Notificações:
+
+- GET /notifications
+- PATCH /notifications/read-all
+- PATCH /notifications/:id/read
+- DELETE /notifications
+
+Admin (role mínima `support`):
+
+- GET /admin/dashboard
+- GET /admin/scrapers
+- GET /admin/scrapers/status
+- GET /admin/scrapers/jobs
+- GET /admin/scrapers/jobs/count
+- GET /admin/observability/health
+
+Admin (role mínima `admin`):
 
 - GET /admin/users
 - GET /admin/users/:id
@@ -306,10 +330,18 @@ Admin:
 - PATCH /admin/users/:id/unblock
 - POST /admin/users/:id/reset
 - POST /admin/scrapers/run
+- POST /admin/scrapers/:id/run
 - GET /admin/observability/metrics
 - GET /admin/observability/dashboards
 - GET /admin/audit
 - GET /admin/permissions/rules
+
+Admin (role mínima `super_admin`):
+
+- PATCH /admin/users/:id/role
+- DELETE /admin/users/:id
+- PATCH /admin/permissions/rules
+- DELETE /admin/jobs/cache
 
 Swagger:
 

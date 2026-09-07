@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -19,6 +21,15 @@ jobs:
 
       - name: Instalar dependencias (raiz)
         run: npm ci
+
+      - name: Validar mensagens de commit (commitlint)
+        # Backstop server-side: o hook local commit-msg pode ser pulado com `git commit --no-verify`,
+        # então o CI revalida todos os commits do PR antes de liberar o merge.
+        # Roda só em pull_request: commits de push para master/develop já chegaram via squash-merge
+        # do GitHub, cuja mensagem é o título do PR (padrão "[PAV-XXX] [Categoria] descrição",
+        # ver GUIA-LINEAR-GITHUB.md) — um formato diferente e fora do controle de quem contribui.
+        if: github.event_name == 'pull_request'
+        run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
 
       - name: Workaround npm optional deps (rollup linux)
         run: npm i --no-save --workspace=frontend @rollup/rollup-linux-x64-gnu

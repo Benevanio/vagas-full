@@ -360,6 +360,12 @@ Boas práticas nos adaptadores:
 - Filtros estruturados de localização, modelo, contrato e senioridade continuam em chaves como `scraper:jobs:country:<value>`, `scraper:jobs:model:<value>` e `scraper:jobs:contract:<value>`.
 - `jobstore.StableID` garante IDs determinísticos para permitir identificação e deduplicação entre execuções.
 
+## Sincronização de keywords com o backend (kwsync)
+
+- O backend publica keywords criadas por usuários na lista Valkey `scraper:keywords:pending` (`backend/src/lib/kwsync.ts`, via `lPush`) quando `POST /keywords` é chamado.
+- `internal/kwsync` (`scraper-go/internal/kwsync/kwsync.go`) implementa um `Consumer` que faz polling dessa mesma chave a cada 30s e persiste as keywords novas no armazenamento local de keywords do scraper.
+- Controlado pela variável `KWSYNC_ENABLED` (padrão `false`) em ambos os lados — quando desabilitado, o backend recusa `POST /keywords` com `403` e o consumidor Go não roda.
+
 ## Cache e configuração
 
 - Cache é abstraído por `internal/cache` com implementações Redis (`NewRedisCache`) e memória (fallback para testes).
@@ -391,6 +397,7 @@ Confirme no serviço `scraper-go` os equivalentes de `SCRAPER_MAX_CONCURRENCY=12
 - `SCRAPER_RUN_LOCK_RENEW_INTERVAL` — intervalo de renovação. Padrão: `30s`; deve ser menor que `SCRAPER_RUN_LOCK_TTL`. Variável ausente usa o default; valor explícito vazio ou inválido impede a inicialização. No Compose, usa `${SCRAPER_RUN_LOCK_RENEW_INTERVAL-30s}`.
 - `GOMAXPROCS` — limite efetivo de threads executando código Go simultaneamente. Valor inicial no Compose: `2`.
 - `GOMEMLIMIT` — meta de memória do runtime/GC. Valor inicial no Compose: `1500MiB`; não substitui `mem_limit` do container.
+- `KWSYNC_ENABLED` — padrão `false`. Liga/desliga o consumidor da fila `scraper:keywords:pending` (ver seção "Sincronização de keywords com o backend").
 - `JOOBLE_API_KEY` — Jooble integration.
 - `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — Adzuna API.
 - `LINKEDIN_KEYWORD_SLOT_SIZE` — quantidade máxima de keywords do LinkedIn por execução quando a busca vier com uma lista grande. Padrão: `30`.

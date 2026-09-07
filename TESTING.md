@@ -642,7 +642,7 @@ Executar antes de qualquer release:
 ### Prioridade 3
 
 - Introduzir monitoramento de erros client/server.
-- Expandir testes E2E para tema, responsividade e fluxo de filtros.
+- Introduzir testes E2E automatizados (browser) para tema, responsividade e fluxo de filtros — hoje não há Playwright/Cypress nem qualquer suíte E2E versionada no repositório; os casos MOB-*/INT-* deste guia são roteiros manuais.
 
 ---
 

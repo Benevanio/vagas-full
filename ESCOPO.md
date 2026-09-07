@@ -97,8 +97,9 @@ Permitir que usuários:
 * Matching avançado
 * Chat interno
 * Aplicação automática
-* Dashboard analítico
 * Assinaturas pagas
+
+> Nota: "Dashboard analítico" estava originalmente listado aqui como fora do MVP, mas já foi entregue — o painel administrativo (`front_admin`) tem um dashboard analítico funcional (métricas de usuários, vagas coletadas, status do scraper) desde a introdução do `front_admin`. Ver [BACKEND.md](BACKEND.md) e [front_admin/README.md](front_admin/README.md).
 
 ---
 

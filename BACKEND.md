@@ -29,12 +29,6 @@ npm run dev   # inicia em modo de desenvolvimento
 npm start     # inicia a API
 ```
 
-Rodar scraper (local):
-
-```bash
-npm run scraper
-```
-
 Testes:
 
 ```bash
@@ -45,10 +39,11 @@ npm run test:watch
 Scripts relevantes em `backend/package.json`:
 
 - `start`, `dev`, `api` — iniciar servidor
-- `scraper`, `scraper:watch` — executar scraper (index.ts / Go)
-- `test`, `test:coverage`, `test:watch` — testes com Vitest
+- `test`, `test:coverage`, `test:watch`, `validate` — testes com Vitest (`validate` roda `npm test`)
 - `db:generate`, `db:migrate`, `db:push` — comandos Drizzle
+- `db:seed` — popula o banco local com usuários e dados de teste (`src/scripts/seed.ts`, idempotente; ver [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#61-seed-e-testes-da-api-local))
 - `security:backfill-user-pii` — backfill de campos de PII criptografados
+- `clear-cache` — limpa cache/índices no Valkey (`src/cache/clearCache.ts`)
 
 ## Arquitetura e módulos principais
 
@@ -65,6 +60,7 @@ Módulos principais:
 - `src/modules/notifications` — notificações do usuário autenticado.
 - `src/modules/jobs` — busca, parsing de filtros, fallback pós-filtro e regras de matching/score de vagas.
 - `src/modules/admin` — usuários admin, permissões, scrapers, auditoria, dashboard e observabilidade.
+- `src/modules/email` — envio de e-mails transacionais assíncronos (ver seção [Módulo de E-mail](#módulo-de-e-mail)).
 
 Adaptadores externos:
 
@@ -73,10 +69,16 @@ Adaptadores externos:
 
 Database / Schemas (Drizzle):
 
-- `src/db/schema/users.ts` — tabela `users`.
-- `src/db/schema/credentials.ts` — credenciais (email, hash).
+- `src/db/schema/users.ts` — tabela `users`. Campo `role` (enum `user_role`: `user` < `support` < `admin` < `super_admin`, hierarquia crescente) e `isBlocked`. Vários campos de PII (`email`, `firstName`, `lastName`, `displayName`, `phone`, `cpf`, `technologies`, `level`) existem em par: uma coluna em texto plano (legado/transição) e uma coluna `*Encrypted` com o valor cifrado (AES-256-GCM, `src/lib/security/encryption.ts`); `emailHash`/`cpfHash` guardam hash HMAC pesquisável (`src/lib/security/searchableHash.ts`) para permitir busca sem descriptografar. O fluxo de criação/atualização sempre grava a versão criptografada e zera a coluna plana.
+- `src/db/schema/credentials.ts` — credenciais de login local (`email`, `emailHash`, `passwordHash`), 1:1 com `users` via `userId`.
+- `src/db/schema/accounts.ts` — vínculos OAuth (`provider`, `providerAccountId`, tokens) associados a um `users.id`.
 - `src/db/schema/keywords.ts` — palavras-chave (fonte `user|scraper`).
-- `src/db/schema/savedJobs.ts` — vagas salvas (`saved_jobs`) e enum `status`.
+- `src/db/schema/savedJobs.ts` — vagas salvas (`saved_jobs`); campo `status` aceita `saved`, `applied`, `interviewing`, `rejected`, `accepted`; campo `notes` guarda anotação privada do usuário sobre a vaga.
+- `src/db/schema/applicationEvents.ts` — `application_events`: histórico de mudança de status de uma vaga salva (`fromStatus`/`toStatus`), exposto em `GET /saved-jobs/:id/events`.
+- `src/db/schema/userPreferences.ts` — `user_preferences`: preferências de busca e checklist de carreira do usuário, criada automaticamente no registro.
+- `src/db/schema/userNotifications.ts` — `user_notifications`: notificações in-app do usuário.
+- `src/db/schema/auditLogs.ts` — `audit_logs`: trilha de ações administrativas (ator, ação, alvo, metadata).
+- `src/db/schema/permissionRules.ts` — `permission_rules`: matriz de permissões (recurso/ação/role mínima) persistida no banco, além da matriz em código (`src/modules/admin/permissions/permissionMatrix.ts`).
 - Migrações e snapshots em `drizzle/`.
 
 Cache & Indexes:
@@ -145,6 +147,7 @@ await emailService.sendWelcome({ email: "usuario@exemplo.com", name: "Ana" });
 - `cors` — configuração de CORS (opções em `src/middleware/cors.ts`).
 - `requestId` — correlação de requisições.
 - `metrics` — coleta de métricas Prometheus.
+- `rateLimit` (`authIpRateLimiter`, `authAccountRateLimiter`) — limita tentativas de login por IP e por conta (`AUTH_RATE_LIMIT_*`).
 - `errorHandler` — tratamento centralizado de erros.
 
 ## Endpoints principais
@@ -162,9 +165,11 @@ Base: `/`
 
 - Credenciais (email/senha)
   - `POST /auth/register` — registra usuário (cria `users`, `credentials`, `userPreferences`) e inicia sessão.
-  - `POST /auth/login` — autentica e inicia sessão.
+  - `POST /auth/login` — autentica e inicia sessão. Sujeito a rate limit por IP e por conta (`AUTH_RATE_LIMIT_IP_MAX`, `AUTH_RATE_LIMIT_ACCOUNT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`).
   - `POST /auth/logout` — destroi sessão.
-  - `GET /auth/me` — retorna id do usuário autenticado.
+  - `GET /auth/me` — retorna `{ user }` com o registro completo do usuário autenticado (401 se a sessão for inválida/expirada).
+  - `GET /auth/connections` — lista provedores OAuth conectados ao usuário autenticado.
+  - `DELETE /auth/connections/:provider` — desconecta um provedor OAuth do usuário autenticado.
 
 - Usuários
   - `GET /users/profile` — retorna perfil do usuário autenticado.
@@ -178,8 +183,8 @@ Base: `/`
   - Filtros aceitos incluem `keywords`, `family`, `technology`, `seniority`, `level`, `location`, `country`, `state`, `city`, `type`/`model`, `contract`/`contractType`/`jobTypes` e `matchSort`.
 
 - Keywords
-  - `GET /keywords` — lista keywords persistidas no banco.
-  - `POST /keywords` — enfileira uma keyword para processamento pelo serviço Go (retorna 202).
+  - `GET /keywords` — lista keywords do usuário autenticado.
+  - `POST /keywords` — se `KWSYNC_ENABLED=false` (padrão), retorna `403` (`{ ok:false, message: "Submissão de keywords por usuário está desabilitada." }`). Se habilitado, insere a keyword na tabela `keywords` (dedupe por `userId+keyword`) e publica na fila Valkey `scraper:keywords:pending` para o serviço Go processar (retorna 202).
 
 - Notificações
   - `GET /notifications` — lista notificações do usuário autenticado.
@@ -190,11 +195,21 @@ Base: `/`
 - Vagas salvas (Saved Jobs)
   - `GET /saved-jobs` — lista vagas salvas do usuário.
   - `GET /saved-jobs/:id` — obtém vaga salva por id.
+  - `GET /saved-jobs/:id/events` — histórico de mudanças de status da vaga salva (tabela `application_events`).
   - `POST /saved-jobs` — cria nova vaga salva.
-  - `PATCH /saved-jobs/:id` — atualiza vaga salva.
+  - `PATCH /saved-jobs/:id` — atualiza vaga salva (inclui `status` e a nota privada `notes`).
   - `DELETE /saved-jobs/:id` — remove vaga salva.
 
 - Admin
+
+  As rotas `/admin/*` são montadas por três routers distintos, cada um com uma role mínima diferente (`src/modules/admin/permissions/roles.ts`, hierarquia `user < support < admin < super_admin`). A matriz completa de recurso/ação/role fica em `src/modules/admin/permissions/permissionMatrix.ts` (também espelhada na tabela `permission_rules`).
+
+  Role mínima `support` (`src/routes/support.routes.ts`):
+  - `GET /admin/dashboard` — métricas gerais (usuários, vagas coletadas, status do scraper).
+  - `GET /admin/scrapers`, `GET /admin/scrapers/status`, `GET /admin/scrapers/jobs`, `GET /admin/scrapers/jobs/count` — leitura de estado/dados do scraper.
+  - `GET /admin/observability/health` — healthcheck agregado dos serviços.
+
+  Role mínima `admin` (`src/routes/admin.routes.ts`):
   - `GET /admin/users` — lista usuários.
   - `GET /admin/users/:id` — obtém usuário por id.
   - `PATCH /admin/users/:id/block` — bloqueia usuário.
@@ -210,10 +225,16 @@ Base: `/`
   - `GET /admin/audit` — consulta logs de auditoria.
   - `GET /admin/permissions/rules` — lista regras de permissão.
 
+  Role mínima `super_admin` (`src/routes/superAdmin.routes.ts`):
+  - `PATCH /admin/users/:id/role` — altera a role de um usuário.
+  - `DELETE /admin/users/:id` — remove um usuário definitivamente.
+  - `PATCH /admin/permissions/rules` — atualiza a matriz de permissões.
+  - `DELETE /admin/jobs/cache` — limpa o cache/índice de vagas no Valkey.
+
 Observações de segurança nas rotas:
 
-- Rotas sob `/users`, `/jobs`, `/keywords`, `/notifications`, `/saved-jobs` e `/admin` usam `withSession` + `requireAuth` (quando aplicável).
-- `auth` usa `withSession` para armazenar OAuth state e criar sessão.
+- Rotas sob `/users`, `/jobs`, `/keywords`, `/notifications`, `/saved-jobs` e `/admin` usam `withSession` + `requireAuth` (quando aplicável); `/admin/*` adicionalmente exige `requireRole`/`requirePermission` conforme a tabela acima.
+- `auth` usa `withSession` para armazenar OAuth state e criar sessão; `POST /auth/login` passa também por `authIpRateLimiter`/`authAccountRateLimiter`.
 
 ## Variáveis de ambiente importantes
 
@@ -229,37 +250,44 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 - `JOB_TYPES` — filtros de tipo de vaga.
 - `TIME_FILTER` — filtro temporal (ex: `r604800`).
 - `DATABASE_URL` — conexão com Postgres.
-- `VALKEY_URL` — endpoint do Valkey (cache e fila de e-mail via BullMQ).
-- `FRONTEND_URL` — URL do frontend; reusada no CTA do e-mail de boas-vindas.
+- `VALKEY_URL` — endpoint do Valkey (cache, fila de e-mail via BullMQ e fila de keywords do kwsync).
+- `CACHE_TTL_MS` — TTL padrão (ms) do cache de vagas no Valkey.
+- `KWSYNC_ENABLED` — padrão `false`. Liga/desliga tanto `POST /keywords` no backend quanto o consumidor da fila `scraper:keywords:pending` no scraper-go (ver [SCRAPER.md](SCRAPER.md)).
+- `APP_URL` — URL base pública da aplicação (uso informativo/documental).
+- `FRONTEND_URL` — URL do frontend; reusada no CTA do e-mail de boas-vindas e no redirect pós-OAuth.
 - `EMAIL_API_KEY` — chave da Resend (vazio ⇒ envio no-op logado).
 - `EMAIL_FROM_ADDRESS` — endereço remetente dos e-mails.
 - `EMAIL_FROM_NAME` — nome exibido do remetente.
 - `EMAIL_QUEUE_ATTEMPTS` — tentativas por job de e-mail (padrão 3).
-- `GO_SCRAPER_URL` — URL do serviço Go que realiza scraping.
+- `GO_SCRAPER_URL` — URL usada pelos adapters `goScraper.ts`/`goKeywords.ts` (fluxo de scraping/keywords direto).
+- `SCRAPER_URL` — URL usada pelo `scraperClient` nos endpoints administrativos `/admin/scrapers/*` (`config.scraperUrl`). É uma variável **distinta** de `GO_SCRAPER_URL`, apontando ao mesmo serviço Go por um caminho de integração diferente.
 - `SESSION_SECRET` — senha para `iron-session` (obrigatória em produção).
 - `ENCRYPTION_MASTER_KEY`, `ENCRYPTION_KEY_ID`, `SEARCH_KEY` — criptografia e campos pesquisáveis de PII.
+- `AUTH_RATE_LIMIT_IP_MAX`, `AUTH_RATE_LIMIT_ACCOUNT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS` — limites de tentativas de login por IP/conta e janela (segundos) do rate limiter de `POST /auth/login`.
 - `CORS_ALLOWED_ORIGINS` — origens permitidas, incluindo `http://localhost:5173` e `http://localhost:5174` em desenvolvimento local com admin.
 - `PROMETHEUS_URL` — integração com Prometheus para rotas de observabilidade.
 - `PORT` — porta do servidor (padrão 3001).
 
 ## Segurança e criptografia
 
-- Senhas armazenadas usando Argon2 (`argon2`), com opções configuradas no serviço de credenciais.
-- Cookies de sessão `httpOnly` e `secure` quando NODE_ENV=production.
+- Senhas com Argon2id (`argon2`), parâmetros `memoryCost: 65536`, `timeCost: 3`, `parallelism: 4` (`src/modules/auth/credentials.service.ts`).
+- Cookies de sessão (`vagas_session`, via `iron-session`) `httpOnly` sempre; `secure` e `sameSite: "none"` quando `NODE_ENV=production`, `sameSite: "lax"` em desenvolvimento (`src/lib/session.ts`).
 - Índices únicos e constraints no DB (ex: email/username/keyword uniques) definidos nas tabelas Drizzle.
-- Campos sensíveis de perfil usam criptografia e hashes pesquisáveis onde aplicável.
+- Campos sensíveis de perfil (`email`, nome, telefone, CPF, tecnologias) são criptografados com AES-256-GCM (`ENCRYPTION_MASTER_KEY`) e indexados para busca via hash HMAC (`SEARCH_KEY`) — ver `src/lib/security/encryption.ts` e `src/lib/security/searchableHash.ts`.
+- `toPublicUser` (`src/modules/users/users.mapper.ts`) remove os campos internos `*Encrypted`/`*Hash` antes de qualquer resposta JSON conter um `user` — apenas os campos decifrados (`email`, `firstName`, etc.) e os demais campos não sensíveis (`id`, `username`, `role`, `isBlocked`, timestamps) são expostos.
 
 ## Integração com serviço Go
 
 - `goScraper.ts` faz POST em `${GO_SCRAPER_URL}/scrape` com `ScrapeParams` e valida `ScrapeResponse`.
 - `goKeywords.ts` consulta e publica keywords via endpoints do serviço Go (`/api/keywords`).
 - O backend lê os índices criados pelo scraper no Valkey, incluindo `scraper:jobs:keyword:*`, `scraper:jobs:family:*`, `scraper:jobs:technology:*` e `scraper:jobs:seniority:*`.
-- Disparos administrativos usam `scraperClient` e preservam os códigos operacionais do serviço Go. O código `SCRAPER_ALREADY_RUNNING` é um conflito esperado; `SCRAPER_RUN_LOCK_UNAVAILABLE` indica política fail-closed e não inicia coleta.
+- Disparos administrativos usam `scraperClient` (via `SCRAPER_URL`) e preservam os códigos operacionais do serviço Go. O código `SCRAPER_ALREADY_RUNNING` é um conflito esperado; `SCRAPER_RUN_LOCK_UNAVAILABLE` indica política fail-closed e não inicia coleta.
+- Fila `scraper:keywords:pending` no Valkey (`src/lib/kwsync.ts` no backend, `scraper-go/internal/kwsync`) sincroniza keywords criadas pelo usuário para o scraper-go processar, controlada por `KWSYNC_ENABLED`.
 
 ## Banco de dados
 
 - Uso de Drizzle ORM com tipos gerados em `src/db/schema`.
-- Tabelas: `users`, `credentials`, `keywords`, `saved_jobs`, `user_preferences`, etc.
+- Tabelas: `users`, `credentials`, `accounts`, `keywords`, `saved_jobs`, `application_events`, `user_preferences`, `user_notifications`, `audit_logs`, `permission_rules` (ver detalhes de cada uma em [Database / Schemas](#arquitetura-e-módulos-principais)).
 - Migrations em `drizzle/`.
 
 ## Logs e observabilidade
@@ -284,11 +312,14 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 
 - Garantir `SESSION_SECRET` seguro em produção.
 - Documentar contrato do Valkey (se for serviço externo) e endpoints do Go scraper com exemplos de payload.
-- Adicionar exemplos de requests/responses no Swagger para endpoints críticos (auth, jobs/search).
+- Adicionar exemplos de requests/responses no Swagger para endpoints críticos (auth, jobs/search) — hoje o Swagger em `/docs` só documenta `/health`, `/jobs/search` e `/keywords`.
+
+### Corrigido nesta revisão
+
+- `toPublicUser` (`src/modules/users/users.mapper.ts`) vazava os campos internos `*Encrypted`/`*Hash` (ciphertext e hashes pesquisáveis) em toda resposta que incluísse um `user` — `/auth/register`, `/auth/login`, `/auth/me`, `/users/profile`, `/admin/users*`. A função agora remove explicitamente esses campos antes de retornar o objeto público.
+- O script `scraper`/`scraper:watch` do `backend/package.json` apontava para `index.ts`/`nodemon index.ts`, mas `backend/index.js` (o único entrypoint existente) importava arquivos `.js` inexistentes e uma função `run()` que não existe em `src/app.ts` — ou seja, o comando já estava completamente quebrado e sem nenhum consumidor no repositório (scraping real é feito pelo serviço `scraper-go`). O script, o arquivo `index.js` e a dependência `nodemon` foram removidos.
 
 ---
-
-Para editar ou complementar esta documentação, abra [backend/BACKEND.md](backend/BACKEND.md).
 
 ## Exemplos de Request / Response
 
@@ -317,11 +348,15 @@ Response (201):
     "email": "user@example.com",
     "displayName": "Fulano",
     "username": "fulano",
-    "emailVerified": false
+    "emailVerified": false,
+    "role": "user",
+    "isBlocked": false
   },
-  "session": { "userId": "uuid" }
+  "session": { "userId": "uuid", "role": "user" }
 }
 ```
+
+O `user` retornado é o registro da tabela `users` já sanitizado por `toPublicUser` (sem os campos internos `*Encrypted`/`*Hash`); o exemplo acima mostra só os campos mais relevantes.
 
 - Login (credentials)
 
@@ -340,8 +375,8 @@ Response (200):
 
 ```json
 {
-  "user": { "id": "uuid", "email": "user@example.com", "username": "fulano" },
-  "session": { "userId": "uuid" }
+  "user": { "id": "uuid", "email": "user@example.com", "username": "fulano", "role": "user" },
+  "session": { "userId": "uuid", "role": "user" }
 }
 ```
 
@@ -378,7 +413,7 @@ POST /keywords
 }
 ```
 
-Response (202):
+Response (202) — apenas com `KWSYNC_ENABLED=true` (padrão é `false`, e a rota responde `403` nesse caso):
 
 ```json
 {
