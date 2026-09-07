@@ -20,5 +20,13 @@ export const savedJobParamsSchema = z.object({
   id: z.string().uuid("ID da vaga salva inválido."),
 });
 
+export const applicationNoteSchema = z.object({
+  content: z.string().trim().min(1, "A nota não pode ficar vazia.").max(5000),
+});
+
+export const applicationNoteParamsSchema = savedJobParamsSchema.extend({
+  noteId: z.string().uuid("ID da nota inválido."),
+});
+
 export type CreateSavedJobInput = z.infer<typeof createSavedJobSchema>;
 export type UpdateSavedJobInput = z.infer<typeof updateSavedJobSchema>;

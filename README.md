@@ -15,6 +15,7 @@
 [OBSERVABILITY](OBSERVIBILITY.MD) |
 [CONTRIBUTING](contribuition.md) |
 [ESCOPO](ESCOPO.md) |
+[SECURITY](SECURITY.md) |
 [Frontend](frontend/README.md) |
 [Frontend Architecture](frontend/ARCHITECTURE.md) |
 [Front Admin](front_admin/README.md)
@@ -262,11 +263,11 @@ Os comandos abaixo existem hoje no repositório e foram conferidos nos `package.
 
 ## API backend (estado atual)
 
-Base: /
+Base: `/api/v1` (ver seção [Versionamento da API](#versionamento-da-api) mais abaixo; as mesmas rotas sem prefixo continuam funcionando como compatibilidade temporária).
 
 Sistema:
 
-- GET /health
+- GET /health (também em `/api/v1/health`)
 
 Autenticação:
 
@@ -302,6 +303,10 @@ Saved jobs:
 - GET /saved-jobs
 - GET /saved-jobs/:id
 - GET /saved-jobs/:id/events
+- GET /saved-jobs/:id/notes
+- POST /saved-jobs/:id/notes
+- PATCH /saved-jobs/:id/notes/:noteId
+- DELETE /saved-jobs/:id/notes/:noteId
 - POST /saved-jobs
 - PATCH /saved-jobs/:id
 - DELETE /saved-jobs/:id
@@ -346,6 +351,25 @@ Admin (role mínima `super_admin`):
 Swagger:
 
 - GET /docs
+
+### Versionamento da API
+
+Os endpoints públicos usam o prefixo `/api/v1` (por exemplo,
+`GET /api/v1/jobs/search`). A interface Swagger está disponível em `GET /docs`
+e documenta essa versão — exceto os endpoints de notas de candidatura
+(`/saved-jobs/:id/notes*`, ver seção "Saved jobs"), que ainda não têm entrada
+em `backend/src/swagger.ts`. As rotas sem prefixo permanecem temporariamente
+por compatibilidade com clientes existentes.
+
+> Nota: `backend/src/swagger.ts` declara o cookie de sessão do Swagger como
+> `candidate_session`, mas o cookie real emitido pela API é `vagas_session`
+> (`backend/src/lib/session.ts`) — divergência a corrigir no código, não
+> uma instrução para testar com o nome errado.
+
+Para atualizar a documentação, altere os schemas e rotas em
+`backend/src/swagger.ts` ou as anotações `@swagger` das rotas e reinicie o
+backend. Em desenvolvimento, acesse a interface em
+`http://localhost:3001/docs`.
 
 ## Docker (infra + aplicação)
 

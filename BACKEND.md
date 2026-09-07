@@ -75,6 +75,7 @@ Database / Schemas (Drizzle):
 - `src/db/schema/keywords.ts` — palavras-chave (fonte `user|scraper`).
 - `src/db/schema/savedJobs.ts` — vagas salvas (`saved_jobs`); campo `status` aceita `saved`, `applied`, `interviewing`, `rejected`, `accepted`; campo `notes` guarda anotação privada do usuário sobre a vaga.
 - `src/db/schema/applicationEvents.ts` — `application_events`: histórico de mudança de status de uma vaga salva (`fromStatus`/`toStatus`), exposto em `GET /saved-jobs/:id/events`.
+- `src/db/schema/applicationNotes.ts` — `application_notes`: múltiplas notas privadas por vaga salva (`content`, timestamps), uma tabela separada do campo legado `saved_jobs.notes` — CRUD completo em `/saved-jobs/:id/notes`.
 - `src/db/schema/userPreferences.ts` — `user_preferences`: preferências de busca e checklist de carreira do usuário, criada automaticamente no registro.
 - `src/db/schema/userNotifications.ts` — `user_notifications`: notificações in-app do usuário.
 - `src/db/schema/auditLogs.ts` — `audit_logs`: trilha de ações administrativas (ator, ação, alvo, metadata).
@@ -143,8 +144,10 @@ await emailService.sendWelcome({ email: "usuario@exemplo.com", name: "Ana" });
 
 - `withSession` — integra `iron-session` (sessões + cookie `vagas_session`).
 - `requireAuth` — valida autenticação nas rotas que exigem usuário.
-- `securityHeaders` — cabeçalhos de segurança.
+- `securityHeaders` — cabeçalhos de segurança (ver seção **Segurança e criptografia**).
 - `cors` — configuração de CORS (opções em `src/middleware/cors.ts`).
+- `rateLimit` — limitadores de tentativas em endpoints de autenticação (`src/middleware/rateLimit.ts`).
+- `validate` — validação/normalização de `body`/`query`/`params` via schemas Zod.
 - `requestId` — correlação de requisições.
 - `metrics` — coleta de métricas Prometheus.
 - `rateLimit` (`authIpRateLimiter`, `authAccountRateLimiter`) — limita tentativas de login por IP e por conta (`AUTH_RATE_LIMIT_*`).
@@ -152,7 +155,7 @@ await emailService.sendWelcome({ email: "usuario@exemplo.com", name: "Ana" });
 
 ## Endpoints principais
 
-Base: `/`
+Base: `/api/v1` (prefixo oficial, `backend/src/app.ts`). As mesmas rotas seguem respondendo sem prefixo (ex.: `/auth/login` além de `/api/v1/auth/login`) como compatibilidade temporária para clientes ainda não migrados; `GET /health` responde nos dois formatos. Veja também a seção "Versionamento da API" do [README.md](README.md).
 
 - Sistema
   - `GET /health` — verifica disponibilidade (retorna `{ ok: true }`).
@@ -196,8 +199,12 @@ Base: `/`
   - `GET /saved-jobs` — lista vagas salvas do usuário.
   - `GET /saved-jobs/:id` — obtém vaga salva por id.
   - `GET /saved-jobs/:id/events` — histórico de mudanças de status da vaga salva (tabela `application_events`).
+  - `GET /saved-jobs/:id/notes` — lista as notas privadas da vaga salva (tabela `application_notes`, mais de uma por vaga).
+  - `POST /saved-jobs/:id/notes` — cria uma nota (`{ content }`, 1–5000 caracteres).
+  - `PATCH /saved-jobs/:id/notes/:noteId` — atualiza o conteúdo de uma nota.
+  - `DELETE /saved-jobs/:id/notes/:noteId` — remove uma nota.
   - `POST /saved-jobs` — cria nova vaga salva.
-  - `PATCH /saved-jobs/:id` — atualiza vaga salva (inclui `status` e a nota privada `notes`).
+  - `PATCH /saved-jobs/:id` — atualiza vaga salva (inclui `status` e o campo legado de nota única `notes`, distinto das notas em `/saved-jobs/:id/notes`).
   - `DELETE /saved-jobs/:id` — remove vaga salva.
 
 - Admin
@@ -270,11 +277,55 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 
 ## Segurança e criptografia
 
+### Autenticação e sessão
+
 - Senhas com Argon2id (`argon2`), parâmetros `memoryCost: 65536`, `timeCost: 3`, `parallelism: 4` (`src/modules/auth/credentials.service.ts`).
 - Cookies de sessão (`vagas_session`, via `iron-session`) `httpOnly` sempre; `secure` e `sameSite: "none"` quando `NODE_ENV=production`, `sameSite: "lax"` em desenvolvimento (`src/lib/session.ts`).
-- Índices únicos e constraints no DB (ex: email/username/keyword uniques) definidos nas tabelas Drizzle.
 - Campos sensíveis de perfil (`email`, nome, telefone, CPF, tecnologias) são criptografados com AES-256-GCM (`ENCRYPTION_MASTER_KEY`) e indexados para busca via hash HMAC (`SEARCH_KEY`) — ver `src/lib/security/encryption.ts` e `src/lib/security/searchableHash.ts`.
 - `toPublicUser` (`src/modules/users/users.mapper.ts`) remove os campos internos `*Encrypted`/`*Hash` antes de qualquer resposta JSON conter um `user` — apenas os campos decifrados (`email`, `firstName`, etc.) e os demais campos não sensíveis (`id`, `username`, `role`, `isBlocked`, timestamps) são expostos.
+
+### Rate limiting (`src/middleware/rateLimit.ts`)
+
+Limitadores por janela deslizante, com contador no Valkey quando `VALKEY_URL` está definido e fallback em memória caso contrário. Respostas incluem `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset`; ao estourar, `429` com `Retry-After`. Falha do backend de contagem responde `503` (fail-closed).
+
+| Rota | Limitadores | Chave |
+| --- | --- | --- |
+| `POST /auth/login` | `authIpRateLimiter`, `authAccountRateLimiter` | IP (hash) / e-mail (hash) |
+| `POST /auth/register` | `authIpRateLimiter`, `authRegisterRateLimiter` | IP (hash) / e-mail (hash), bucket próprio |
+
+Configuração (variável ausente usa o default; valor `≤ 0` ou não numérico também cai no default):
+
+- `AUTH_RATE_LIMIT_IP_MAX` — máximo de tentativas por IP na janela. Default `20`.
+- `AUTH_RATE_LIMIT_ACCOUNT_MAX` — máximo por e-mail na janela (login e cadastro têm buckets separados). Default `5`.
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS` — tamanho da janela em segundos. Default `900` (15 min).
+
+Pendente: aplicar rate limit ao endpoint de exportação de dados (LGPD) quando a PAV-41 for mergeada.
+
+### CORS (`src/middleware/cors.ts`)
+
+- `CORS_ALLOWED_ORIGINS` (lista separada por vírgula) é a fonte da verdade das origens permitidas.
+- Sem a env: em `production` cai apenas nas origens de produção (`*.candidate.app.br`) e loga um aviso — `localhost` **nunca** entra no allowlist de produção por fallback. Fora de produção, o fallback inclui `http://localhost:5173` e `:5174`.
+- `credentials: true`; métodos `GET, POST, PATCH, DELETE, OPTIONS`; headers `Content-Type, Authorization, X-Requested-With`; preflight cacheado por 24 h. Requisições sem header `Origin` (server-to-server, mesma origem) são permitidas.
+- Origem fora do allowlist retorna `403` com `{ code: "FORBIDDEN", message: "Origem não permitida." }`.
+
+### Cabeçalhos de resposta (`src/middleware/securityHeaders.ts`)
+
+Aplicados a todas as respostas:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — só sobre HTTPS (`req.secure`, resolvido via `trust proxy`) ou `NODE_ENV=production`. `preload` fica de fora de propósito (opt-in do time).
+- `x-powered-by` desabilitado.
+- CSP da API e dos frontends (Nginx/Vercel) é tratada em [SECURITY.md](SECURITY.md) (PAV-132).
+
+### Entrada e persistência
+
+- Corpo de requisição limitado a `16kb` (`express.json({ limit: "16kb" })`).
+- Validação/normalização de entrada via schemas Zod (`middleware/validate`) nas rotas de auth, users, keywords e saved-jobs.
+- Acesso ao banco via Drizzle (queries parametrizadas — sem concatenação de SQL).
+- Índices únicos e constraints no DB (ex: email/username/keyword uniques) definidos nas tabelas Drizzle.
 
 ## Integração com serviço Go
 
@@ -287,7 +338,7 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 ## Banco de dados
 
 - Uso de Drizzle ORM com tipos gerados em `src/db/schema`.
-- Tabelas: `users`, `credentials`, `accounts`, `keywords`, `saved_jobs`, `application_events`, `user_preferences`, `user_notifications`, `audit_logs`, `permission_rules` (ver detalhes de cada uma em [Database / Schemas](#arquitetura-e-módulos-principais)).
+- Tabelas: `users`, `credentials`, `accounts`, `keywords`, `saved_jobs`, `application_events`, `application_notes`, `user_preferences`, `user_notifications`, `audit_logs`, `permission_rules` (ver detalhes de cada uma em [Database / Schemas](#arquitetura-e-módulos-principais)).
 - Migrations em `drizzle/`.
 
 ## Logs e observabilidade
@@ -312,7 +363,8 @@ Definidas/consumidas em `src/config.ts` e outros módulos:
 
 - Garantir `SESSION_SECRET` seguro em produção.
 - Documentar contrato do Valkey (se for serviço externo) e endpoints do Go scraper com exemplos de payload.
-- Adicionar exemplos de requests/responses no Swagger para endpoints críticos (auth, jobs/search) — hoje o Swagger em `/docs` só documenta `/health`, `/jobs/search` e `/keywords`.
+- Adicionar ao Swagger (`backend/src/swagger.ts`) os endpoints de notas de candidatura (`/saved-jobs/:id/notes*`), que ainda não estão documentados ali.
+- Corrigir `backend/src/swagger.ts`: o `securitySchemes.cookieAuth` declara o cookie como `candidate_session`, mas o cookie de sessão real é `vagas_session` (`src/lib/session.ts`).
 
 ### Corrigido nesta revisão
 

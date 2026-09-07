@@ -369,6 +369,8 @@ Rota de login real (confirmada no código, montada em `backend/src/app.ts`):
 
 Os exemplos abaixo assumem o backend rodando em `http://localhost:3001` (padrão local). Ajuste a porta se você alterou `PORT` no `backend/.env`.
 
+O prefixo oficial da API é `/api/v1` (ex.: `http://localhost:3001/api/v1/auth/login`). As mesmas rotas sem prefixo (como nos exemplos abaixo) continuam funcionando como compatibilidade temporária — os dois formatos são equivalentes hoje, mas prefira `/api/v1` em integrações novas.
+
 **1. Login** (salva o cookie de sessão em `cookies.txt`):
 
 ```bash
@@ -411,6 +413,16 @@ curl -i -b cookies.txt -X PATCH http://localhost:3001/saved-jobs/SAVED_JOB_ID \
   -d '{"status":"applied","notes":"nota privada atualizada via curl"}'
 ```
 
+O `notes` acima é o campo legado de nota única da vaga salva. Para múltiplas notas privadas (feature mais recente), use o sub-recurso dedicado:
+
+```bash
+curl -i -b cookies.txt -X POST http://localhost:3001/saved-jobs/SAVED_JOB_ID/notes \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Recrutador confirmou entrevista técnica para sexta."}'
+
+curl -i -b cookies.txt http://localhost:3001/saved-jobs/SAVED_JOB_ID/notes
+```
+
 **6. Exclusão — remover a vaga salva de teste:**
 
 ```bash
@@ -443,7 +455,7 @@ Como usar:
 
 1. Suba o backend localmente.
 2. Acesse `http://localhost:3001/docs` no navegador.
-3. Hoje o Swagger documenta apenas `GET /health`, `GET /jobs/search` e as rotas de `/keywords` — as demais rotas (`/auth`, `/users`, `/saved-jobs`, `/notifications`, `/admin`) ainda não têm anotações Swagger. Para essas, use os exemplos de `curl` desta seção e o `BACKEND.md`, ou a coleção Bruno em `backend/bruno/` (já vem com um ambiente `Local` configurado).
+3. O Swagger hoje documenta praticamente toda a API (`/auth`, `/users`, `/jobs`, `/saved-jobs`, `/notifications`, `/keywords`, `/admin`), com o prefixo `/api/v1`. A exceção são os endpoints de múltiplas notas privadas (`/saved-jobs/:id/notes`, `/saved-jobs/:id/notes/:noteId`), que ainda não têm entrada no Swagger — para esses, use os exemplos de `curl` desta seção, o `BACKEND.md`, ou a coleção Bruno em `backend/bruno/` (já vem com um ambiente `Local` configurado).
 4. O Swagger UI não injeta automaticamente o cookie de sessão criado por um login feito fora do navegador — para testar rotas autenticadas diretamente pelo Swagger, faça login no mesmo navegador em `http://localhost:5173/login` primeiro (o cookie fica no domínio do backend) ou prefira os exemplos de `curl` acima.
 
 ### Dados criados pelo seed (resumo)

@@ -13,8 +13,10 @@ Active project-level architectural decisions (AD-NNN). Each design must conform 
 
 ## Handoff
 
-**Feature concluída:** `email-module` (PAV-76) — ✅ Done.
-**Estado:** 11/11 tasks implementadas e commitadas na branch `feature/pav-76-modulo-email` (Batch A: 5 commits; Batch B: 6 commits). Verifier PASS (11/11 ACs, gate 529/0, sensor 5/5 mutantes mortos). Relatório em `.specs/features/email-module/validation.md`.
-**Entregue:** API interna `emailService.send/sendWelcome`, fila BullMQ/Valkey (ioredis), worker in-process, `MailProvider`+Resend+Noop, template `welcome` react-email com CTA (`FRONTEND_URL`), boas-vindas no registro (`CredentialsService.register`), docs no `BACKEND.md`.
-**Pendências deixadas ao usuário:** (1) push + PR ainda NÃO feitos (a pedido); (2) envs de produção `EMAIL_API_KEY`/`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME` a comunicar ao dev quando for pra prod — sem elas o `NoopProvider` só loga.
-**Próximo passo:** quando o usuário pedir, abrir PR da PAV-76.
+**Feature concluída:** `job-detail-reorganizacao` (PAV-92) — ✅ Done.
+**Estado:** implementada e commitada na branch `jovinull/pav-92-frontend` (4 commits: reorg de tiles, dedup do payload, feedback de notas, docs). Validação standalone PASS (8/8 ACs, gate 352/352 frontend, sensor de mutação raciocinado sem sobreviventes). Relatório em `.specs/features/job-detail-reorganizacao/validation.md`.
+**Entregue:** `JobDetailModal` reorganizado — local/modalidade/nível/fonte/salário/match em tiles rotulados; bloco "Payload da vaga" renomeado para "Detalhes adicionais" e sem duplicar dado já mostrado; texto indicando que notas salvam ao fechar. Sem migração de modal pra página (critério do próprio card já resolvia isso) e sem novo contrato de backend.
+**Pendências deixadas ao usuário:** push + PR ainda NÃO feitos (aguardando confirmação do usuário).
+**Próximo passo:** quando o usuário pedir, abrir PR da PAV-92.
+
+**Feature anterior concluída:** `email-module` (PAV-76) — ✅ Done. 11/11 tasks, branch `feature/pav-76-modulo-email`, Verifier PASS (11/11 ACs, gate 529/0, sensor 5/5). Entregue: `emailService.send/sendWelcome`, fila BullMQ/Valkey, `MailProvider`+Resend+Noop, template `welcome`, boas-vindas no registro. Envs de produção `EMAIL_API_KEY`/`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME` a comunicar ao dev quando for pra prod.

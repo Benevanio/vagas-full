@@ -86,8 +86,8 @@ export class CredentialsService {
     // E-mail de boas-vindas: falha nunca derruba o registro (EMAIL-08).
     try {
       await emailService.sendWelcome({
-        email: user.email,
-        name: user.displayName ?? user.username,
+        email: normalizedEmail,
+        name: name?.trim() || normalizedEmail.split("@")[0],
       });
     } catch (error) {
       logError("Falha ao disparar e-mail de boas-vindas.", {
