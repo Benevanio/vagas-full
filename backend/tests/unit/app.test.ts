@@ -239,6 +239,60 @@ describe("jobsApiApp", () => {
     expect(res.headers["referrer-policy"]).toBe(
       "strict-origin-when-cross-origin",
     );
+    expect(res.headers["permissions-policy"]).toBe(
+      "camera=(), microphone=(), geolocation=()",
+    );
+  });
+
+  it("não envia HSTS sobre HTTP fora de produção", async () => {
+    const app = createJobsApiApp();
+    const res = await request(app).get("/health").expect(200);
+
+    expect(res.headers["strict-transport-security"]).toBeUndefined();
+  });
+
+  it("envia HSTS quando NODE_ENV=production", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const app = createJobsApiApp();
+      const res = await request(app).get("/health").expect(200);
+
+      expect(res.headers["strict-transport-security"]).toBe(
+        "max-age=31536000; includeSubDomains",
+      );
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+
+  it("em produção sem CORS_ALLOWED_ORIGINS bloqueia localhost mas libera origem de produção", async () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousOrigins = process.env.CORS_ALLOWED_ORIGINS;
+    process.env.NODE_ENV = "production";
+    delete process.env.CORS_ALLOWED_ORIGINS;
+    try {
+      const app = createJobsApiApp();
+
+      await request(app)
+        .get("/health")
+        .set("Origin", "https://candidate.app.br")
+        .expect(200);
+
+      const blocked = await request(app)
+        .get("/health")
+        .set("Origin", "http://localhost:5173")
+        .expect(403);
+
+      expect(blocked.body.message).toBe("Origem não permitida.");
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousOrigins === undefined) {
+        delete process.env.CORS_ALLOWED_ORIGINS;
+      } else {
+        process.env.CORS_ALLOWED_ORIGINS = previousOrigins;
+      }
+    }
   });
 
   // ── jobs/search ───────────────────────────────────────────────────────
