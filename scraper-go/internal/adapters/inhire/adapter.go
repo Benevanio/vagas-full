@@ -13,31 +13,28 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/adapters/adapterutil"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
 
 const (
-	inhireDefaultAPIURL            = "https://api.inhire.app/job-posts/public/pages"
-	inhireDefaultTenantsFile       = "./internal/interfaces/inhireTenants.json"
-	inhireDefaultConcurrency       = 16
-	inhireDefaultDetailConcurrency = 8
-	inhireDefaultDetailTimeout     = 10 * time.Second
-	inhireDefaultDetailMaxBytes    = int64(768 * 1024)
-	inhireMaxDescriptionRunes      = 12000
+	inhireDefaultAPIURL         = "https://api.inhire.app/job-posts/public/pages"
+	inhireDefaultTenantsFile    = "./internal/interfaces/inhireTenants.json"
+	inhireDefaultDetailTimeout  = 10 * time.Second
+	inhireDefaultDetailMaxBytes = int64(768 * 1024)
+	inhireMaxDescriptionRunes   = 12000
 )
 
 type InHireAdapter struct {
 	client      *http.Client
 	apiURL      string
 	tenantsFile string
-	concurrency int
 }
 
 type inhireTenant struct {
@@ -75,12 +72,18 @@ func NewInHire() *InHireAdapter {
 		},
 		apiURL:      inhireDefaultAPIURL,
 		tenantsFile: inhireDefaultTenantsFile,
-		concurrency: inhireDefaultConcurrency,
 	}
 }
 
 func (a *InHireAdapter) SourceName() string {
 	return "InHire"
+}
+
+func (a *InHireAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderInHire,
+		Mode:     ports.DiscoveryCatalog,
+	}
 }
 
 func (a *InHireAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
@@ -90,6 +93,14 @@ func (a *InHireAdapter) Search(ctx context.Context, keyword string, req domain.S
 	}
 
 	return a.SearchBatch(ctx, []string{keyword}, req)
+}
+
+func (a *InHireAdapter) SearchCatalog(
+	ctx context.Context,
+	keywords []string,
+	req domain.ScrapeRequest,
+) ([]domain.Job, error) {
+	return a.SearchBatch(ctx, keywords, req)
 }
 
 func (a *InHireAdapter) SearchBatch(ctx context.Context, keywords []string, req domain.ScrapeRequest) ([]domain.Job, error) {
@@ -102,9 +113,15 @@ func (a *InHireAdapter) SearchBatch(ctx context.Context, keywords []string, req 
 	}
 
 	rawJobs := a.fetchAllTenants(ctx, tenants, req)
+	if cause := context.Cause(ctx); cause != nil {
+		return nil, cause
+	}
 	jobs := make([]domain.Job, 0, len(rawJobs))
 	var skippedStatus, skippedRemote int
 	for _, job := range rawJobs {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 		if status := strings.TrimSpace(job.raw.Status); status != "" && !strings.EqualFold(status, "published") {
 			skippedStatus++
 			continue
@@ -125,6 +142,9 @@ func (a *InHireAdapter) SearchBatch(ctx context.Context, keywords []string, req 
 
 	if inhireDetailEnrichmentEnabled() {
 		jobs = a.enrichJobsWithDetails(ctx, jobs, keywords)
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 	}
 
 	slog.Info("inhire: funil do adapter",
@@ -143,7 +163,6 @@ func (a *InHireAdapter) enrichJobsWithDetails(ctx context.Context, jobs []domain
 		return jobs
 	}
 
-	concurrency := inhireDetailConcurrency()
 	timeout := inhireDetailTimeout()
 	eligible := make([]int, 0, len(jobs))
 	for index := range jobs {
@@ -157,56 +176,34 @@ func (a *InHireAdapter) enrichJobsWithDetails(ctx context.Context, jobs []domain
 
 	started := time.Now()
 	var enriched, failed int
-	var mu sync.Mutex
-	work := make(chan int)
-	var wg sync.WaitGroup
-	workerCount := min(concurrency, len(eligible))
-
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for index := range work {
-				detail, err := a.fetchJobDetailText(ctx, jobs[index].URL, timeout)
-				mu.Lock()
-				if err != nil {
-					failed++
-					mu.Unlock()
-					continue
-				}
-				if detail != "" {
-					jobs[index].Description = strings.Join(adapterutil.NonEmptyStrings([]string{
-						jobs[index].Description,
-						detail,
-					}), "\n")
-					jobs[index].Keywords = adapterutil.UniqueTrimmedStrings(append(jobs[index].Keywords, inhireMatchingKeywordsInText(detail, keywords)...))
-					if jobs[index].Keyword == "" && len(jobs[index].Keywords) > 0 {
-						jobs[index].Keyword = jobs[index].Keywords[0]
-					}
-					enriched++
-				}
-				mu.Unlock()
-			}
-		}()
-	}
-
-sendWork:
 	for _, index := range eligible {
-		select {
-		case <-ctx.Done():
-			break sendWork
-		case work <- index:
+		if context.Cause(ctx) != nil {
+			break
+		}
+		detail, err := a.fetchJobDetailText(ctx, jobs[index].URL, timeout)
+		if err != nil {
+			failed++
+			continue
+		}
+		if detail != "" {
+			jobs[index].Description = strings.Join(adapterutil.NonEmptyStrings([]string{
+				jobs[index].Description,
+				detail,
+			}), "\n")
+			jobs[index].Keywords = adapterutil.UniqueTrimmedStrings(append(jobs[index].Keywords, inhireMatchingKeywordsInText(detail, keywords)...))
+			if jobs[index].Keyword == "" && len(jobs[index].Keywords) > 0 {
+				jobs[index].Keyword = jobs[index].Keywords[0]
+			}
+			enriched++
 		}
 	}
-	close(work)
-	wg.Wait()
 
 	slog.Info("inhire: detalhes enriquecidos",
 		"jobs_total", len(jobs),
 		"eligible", len(eligible),
 		"enriched", enriched,
 		"failed", failed,
-		"concurrency", concurrency,
+		"mode", "serial",
 		"duration", time.Since(started).Round(time.Millisecond).String(),
 	)
 
@@ -253,18 +250,6 @@ func inhireDetailEnrichmentEnabled() bool {
 		return false
 	}
 	return strings.EqualFold(value, "true") || value == "1" || strings.EqualFold(value, "yes")
-}
-
-func inhireDetailConcurrency() int {
-	value := strings.TrimSpace(os.Getenv("INHIRE_DETAILS_CONCURRENCY"))
-	if value == "" {
-		return inhireDefaultDetailConcurrency
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return inhireDefaultDetailConcurrency
-	}
-	return parsed
 }
 
 func inhireDetailTimeout() time.Duration {
@@ -397,62 +382,28 @@ type inhireTenantJob struct {
 }
 
 func (a *InHireAdapter) fetchAllTenants(ctx context.Context, tenants []inhireTenant, req domain.ScrapeRequest) []inhireTenantJob {
-	concurrency := a.concurrency
-	if concurrency <= 0 {
-		concurrency = inhireDefaultConcurrency
-	}
-	if concurrency > len(tenants) {
-		concurrency = len(tenants)
-	}
-	if concurrency <= 0 {
-		return nil
-	}
-
 	jobs := make([]inhireTenantJob, 0)
 	var fetched, failed, withJobs int
-	var mu sync.Mutex
-	work := make(chan inhireTenant)
-	var wg sync.WaitGroup
-
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for tenant := range work {
-				page, err := a.fetchTenant(ctx, tenant, req)
-				if err != nil {
-					mu.Lock()
-					failed++
-					mu.Unlock()
-					continue
-				}
-				if page.TenantName != "" {
-					tenant.TenantName = strings.TrimSpace(page.TenantName)
-				}
-				mu.Lock()
-				fetched++
-				if len(page.JobsPage) > 0 {
-					withJobs++
-				}
-				for _, job := range page.JobsPage {
-					jobs = append(jobs, inhireTenantJob{tenant: tenant, raw: job})
-				}
-				mu.Unlock()
-			}
-		}()
-	}
-
 	for _, tenant := range tenants {
-		select {
-		case <-ctx.Done():
-			close(work)
-			wg.Wait()
+		if context.Cause(ctx) != nil {
 			return jobs
-		case work <- tenant:
+		}
+		page, err := a.fetchTenant(ctx, tenant, req)
+		if err != nil {
+			failed++
+			continue
+		}
+		if page.TenantName != "" {
+			tenant.TenantName = strings.TrimSpace(page.TenantName)
+		}
+		fetched++
+		if len(page.JobsPage) > 0 {
+			withJobs++
+		}
+		for _, job := range page.JobsPage {
+			jobs = append(jobs, inhireTenantJob{tenant: tenant, raw: job})
 		}
 	}
-	close(work)
-	wg.Wait()
 
 	slog.Info("inhire: tenants consultados",
 		"tenants_catalog", len(tenants),

@@ -49,3 +49,24 @@ func TestLinkedInSearchContinuesPastFormerDefaultPagesUntilEmpty(t *testing.T) {
 		t.Fatalf("expected 7 calls including empty page, got %d calls", calls)
 	}
 }
+
+func TestLinkedInSearchBatchRespectsKeywordSlotSize(t *testing.T) {
+	t.Setenv("LINKEDIN_KEYWORD_SLOT_SIZE", "2")
+	var seen []string
+	adapter := NewLinkedIn()
+	adapter.client = testutil.HTTPClient(func(req *http.Request) (*http.Response, error) {
+		seen = append(seen, req.URL.Query().Get("keywords"))
+		return testutil.Response(""), nil
+	})
+
+	_, err := adapter.SearchBatch(context.Background(), []string{"go", "java", "python", "rust"}, domain.ScrapeRequest{
+		WaitBetweenSearchesMs: 1,
+		MaxPagesPerKeyword:    1,
+	})
+	if err != nil {
+		t.Fatalf("SearchBatch returned error: %v", err)
+	}
+	if fmt.Sprintf("%v", seen) != "[go java]" {
+		t.Fatalf("expected slot of 2 keywords, got %#v", seen)
+	}
+}

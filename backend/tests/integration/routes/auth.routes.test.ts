@@ -466,6 +466,31 @@ describe("Integration - Auth Routes", () => {
         .send(registerPayload)
         .expect(500);
     });
+
+    it("bloqueia cadastros repetidos para o mesmo email com 429", async () => {
+      vi.mocked(getIronSession).mockResolvedValue(
+        fixtureCredentialsSession as any,
+      );
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(app)
+          .post(`${BASE}/register`)
+          .send(registerPayload)
+          .expect(201);
+      }
+
+      const res = await request(app)
+        .post(`${BASE}/register`)
+        .send(registerPayload)
+        .expect(429);
+
+      expect(res.body).toHaveProperty(
+        "error",
+        "Muitas tentativas. Tente novamente mais tarde.",
+      );
+      expect(res.headers["retry-after"]).toBeDefined();
+      expect(mockCredentialsService.register).toHaveBeenCalledTimes(5);
+    });
   });
 
   // ── POST /login ───────────────────────────────────────────────────────────

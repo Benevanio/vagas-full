@@ -1,11 +1,31 @@
 package adapterutil
 
 import (
+	"context"
 	"html"
 	"strings"
+	"time"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
 )
+
+func Wait(ctx context.Context, duration time.Duration) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	if duration <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
 
 func NonEmptyStrings(values []string) []string {
 	out := make([]string, 0, len(values))

@@ -30,89 +30,64 @@ type result struct {
 
 type adapterTask struct {
 	adapter  ports.JobSource
+	provider ports.ProviderID
+	mode     ports.DiscoveryMode
 	keywords []string
-	batch    bool
 }
 
 func Run(ctx context.Context, adapterList []ports.JobSource, req domain.ScrapeRequest) ([]domain.Job, error) {
+	return runWithConcurrency(ctx, adapterList, req, 2, nil)
+}
+
+func runWithConcurrency(
+	ctx context.Context,
+	adapterList []ports.JobSource,
+	req domain.ScrapeRequest,
+	defaultProviderConcurrency int,
+	providerOverrides map[ports.ProviderID]int,
+) ([]domain.Job, error) {
 	pipelineStart := time.Now()
 
 	maxConcurrency := req.MaxConcurrency
 	if maxConcurrency <= 0 {
 		return nil, errInvalidMaxConcurrency
 	}
-
-	tasks := make([]adapterTask, 0, len(adapterList)*len(req.Keywords))
-	for _, a := range adapterList {
-		if _, ok := a.(ports.BatchJobSource); ok {
-			tasks = append(tasks, adapterTask{adapter: a, keywords: req.Keywords, batch: true})
-			continue
-		}
-
-		for _, kw := range req.Keywords {
-			tasks = append(tasks, adapterTask{adapter: a, keywords: []string{kw}})
-		}
+	if err := validateSources(adapterList); err != nil {
+		return nil, err
 	}
 
-	sem := make(chan struct{}, maxConcurrency)
-	results := make(chan result, len(tasks))
-	var wg sync.WaitGroup
-
-schedule:
-	for _, t := range tasks {
-		if ctx.Err() != nil {
-			break schedule
-		}
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			break schedule
-		}
-		if ctx.Err() != nil {
-			<-sem
-			break schedule
-		}
-
-		wg.Add(1)
-
-		go func(t adapterTask) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			source := t.adapter.SourceName()
-
-			timer := prometheus.NewTimer(metrics.ScrapeDurationSeconds.WithLabelValues(source))
-			jobs, err := runAdapterTask(ctx, t, req)
-			timer.ObserveDuration()
-
-			metrics.ScrapeRunsTotal.WithLabelValues(source).Inc()
-
-			results <- result{jobs: jobs, err: err}
-
-			if err != nil {
-				metrics.ScrapeErrorsTotal.WithLabelValues(source).Inc()
-				slog.Warn("adapter falhou",
-					"source", source,
-					"keywords", len(t.keywords),
-					"batch", t.batch,
-					"error", err,
-				)
-				return
-			}
-
-			metrics.JobsFoundTotal.WithLabelValues(source).Add(float64(len(jobs)))
-
-			slog.Info("adapter concluído",
-				"source", source,
-				"keywords", len(t.keywords),
-				"batch", t.batch,
-				"count", len(jobs),
-			)
-		}(t)
+	budget, err := newConcurrencyBudget(
+		maxConcurrency,
+		defaultProviderConcurrency,
+		providerOverrides,
+	)
+	if err != nil {
+		return nil, err
 	}
 
+	queueCapacity := max(1, maxConcurrency*2)
+	tasks := make(chan adapterTask, queueCapacity)
+	results := make(chan result, queueCapacity)
+	runStats := newProviderRunStats(adapterList, budget)
+
+	var tasksWg sync.WaitGroup
+	tasksWg.Add(1 + maxConcurrency)
 	go func() {
-		wg.Wait()
+		defer tasksWg.Done()
+		produceTasks(ctx, tasks, adapterList, req.Keywords, runStats)
+	}()
+	for range maxConcurrency {
+		go func() {
+			defer tasksWg.Done()
+			runWorker(ctx, tasks, results, budget, runStats, req)
+		}()
+	}
+
+	var gatherWg sync.WaitGroup
+	gatherWg.Add(1)
+	go func() {
+		defer gatherWg.Done()
+		tasksWg.Wait()
 		close(results)
 	}()
 
@@ -122,6 +97,9 @@ schedule:
 			allJobs = append(allJobs, r.jobs...)
 		}
 	}
+	tasksWg.Wait()
+	gatherWg.Wait()
+	logProviderRunStats(runStats)
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, cause
 	}
@@ -135,10 +113,256 @@ schedule:
 	return classified, nil
 }
 
+type taskCursor struct {
+	adapter  ports.JobSource
+	provider ports.ProviderID
+	mode     ports.DiscoveryMode
+	emitted  bool
+	next     int
+}
+
+type providerTaskCursor struct {
+	sources []taskCursor
+	next    int
+}
+
+func produceTasks(
+	ctx context.Context,
+	queue chan<- adapterTask,
+	adapterList []ports.JobSource,
+	keywords []string,
+	runStats *providerRunStats,
+) {
+	defer close(queue)
+
+	providerIndexes := make(map[ports.ProviderID]int)
+	cursors := make([]providerTaskCursor, 0, len(adapterList))
+	for _, adapter := range adapterList {
+		capabilities := ports.CapabilitiesOf(adapter)
+		sourceCursor := taskCursor{
+			adapter:  adapter,
+			provider: capabilities.Provider,
+			mode:     capabilities.Mode,
+		}
+		index, exists := providerIndexes[capabilities.Provider]
+		if !exists {
+			index = len(cursors)
+			providerIndexes[capabilities.Provider] = index
+			cursors = append(cursors, providerTaskCursor{})
+		}
+		cursors[index].sources = append(cursors[index].sources, sourceCursor)
+	}
+
+	for {
+		produced := false
+		for i := range cursors {
+			task, ok := cursors[i].nextTask(keywords)
+			if !ok {
+				continue
+			}
+			produced = true
+			if cause := context.Cause(ctx); cause != nil {
+				return
+			}
+			select {
+			case queue <- task:
+				runStats.recordProduced(task)
+			case <-ctx.Done():
+				return
+			}
+		}
+		if !produced {
+			return
+		}
+	}
+}
+
+func (c *providerTaskCursor) nextTask(keywords []string) (adapterTask, bool) {
+	if len(c.sources) == 0 {
+		return adapterTask{}, false
+	}
+
+	for range len(c.sources) {
+		index := c.next % len(c.sources)
+		c.next = (index + 1) % len(c.sources)
+		if task, ok := c.sources[index].nextTask(keywords); ok {
+			return task, true
+		}
+	}
+	return adapterTask{}, false
+}
+
+func (c *taskCursor) nextTask(keywords []string) (adapterTask, bool) {
+	if c.mode == ports.DiscoveryBatch || c.mode == ports.DiscoveryCatalog {
+		if c.emitted {
+			return adapterTask{}, false
+		}
+		c.emitted = true
+		return adapterTask{
+			adapter:  c.adapter,
+			provider: c.provider,
+			mode:     c.mode,
+			keywords: append([]string(nil), keywords...),
+		}, true
+	}
+
+	if c.next >= len(keywords) {
+		return adapterTask{}, false
+	}
+	task := adapterTask{
+		adapter:  c.adapter,
+		provider: c.provider,
+		mode:     c.mode,
+		keywords: []string{keywords[c.next]},
+	}
+	c.next++
+	return task, true
+}
+
+func validateSources(adapterList []ports.JobSource) error {
+	for _, source := range adapterList {
+		capabilities := ports.CapabilitiesOf(source)
+		if _, explicit := source.(ports.CapabilityJobSource); explicit {
+			provider, known := ports.ParseProviderID(string(capabilities.Provider))
+			if !known || provider != capabilities.Provider {
+				return fmt.Errorf(
+					"pipeline: source %q declares invalid provider %q",
+					source.SourceName(),
+					capabilities.Provider,
+				)
+			}
+		}
+
+		switch capabilities.Mode {
+		case ports.DiscoveryKeyword:
+		case ports.DiscoveryBatch:
+			if _, ok := source.(ports.BatchJobSource); !ok {
+				return fmt.Errorf(
+					"pipeline: provider %s declares batch mode without BatchJobSource",
+					capabilities.Provider,
+				)
+			}
+		case ports.DiscoveryCatalog:
+			if _, ok := source.(ports.CatalogJobSource); !ok {
+				return fmt.Errorf(
+					"pipeline: provider %s declares catalog mode without CatalogJobSource",
+					capabilities.Provider,
+				)
+			}
+		default:
+			return fmt.Errorf(
+				"pipeline: provider %s declares invalid discovery mode %q",
+				capabilities.Provider,
+				capabilities.Mode,
+			)
+		}
+	}
+	return nil
+}
+
+func runWorker(
+	ctx context.Context,
+	tasks <-chan adapterTask,
+	results chan<- result,
+	budget *concurrencyBudget,
+	runStats *providerRunStats,
+	req domain.ScrapeRequest,
+) {
+	for {
+		if context.Cause(ctx) != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case task, ok := <-tasks:
+			if !ok {
+				return
+			}
+			if context.Cause(ctx) != nil {
+				return
+			}
+			runScheduledTask(ctx, task, results, budget, runStats, req)
+		}
+	}
+}
+
+func runScheduledTask(
+	ctx context.Context,
+	task adapterTask,
+	results chan<- result,
+	budget *concurrencyBudget,
+	runStats *providerRunStats,
+	req domain.ScrapeRequest,
+) {
+	permit, err := budget.acquire(ctx, task.provider)
+	if err != nil {
+		return
+	}
+	defer permit.release()
+
+	source := string(task.provider)
+	started := time.Now()
+	timer := prometheus.NewTimer(metrics.ScrapeDurationSeconds.WithLabelValues(source))
+	jobs, err := runAdapterTask(ctx, task, req)
+	timer.ObserveDuration()
+	runStats.recordCompleted(ctx, task, err, time.Since(started))
+
+	metrics.ScrapeRunsTotal.WithLabelValues(source).Inc()
+	if err != nil {
+		metrics.ScrapeErrorsTotal.WithLabelValues(source).Inc()
+	} else {
+		metrics.JobsFoundTotal.WithLabelValues(source).Add(float64(len(jobs)))
+	}
+
+	select {
+	case results <- result{jobs: jobs, err: err}:
+	case <-ctx.Done():
+	}
+}
+
+func logProviderRunStats(runStats *providerRunStats) {
+	for _, summary := range runStats.snapshots() {
+		attrs := []any{
+			"provider", summary.Provider,
+			"mode", summary.Mode,
+			"produced", summary.Produced,
+			"completed", summary.Completed,
+			"cancelled", summary.Cancelled,
+			"errors", summary.Errors,
+			"timeouts", summary.Timeouts,
+			"max_concurrency_effective", summary.MaxConcurrencyEffective,
+			"duration", summary.Duration.Round(time.Millisecond),
+		}
+		if summary.StopCause != "" {
+			attrs = append(attrs, "stop_cause", summary.StopCause)
+		}
+		if sample := summary.ErrorSample; sample != nil {
+			attrs = append(attrs, slog.Group("error_sample",
+				"provider", sample.Provider,
+				"source", sample.Source,
+				"mode", sample.Mode,
+				"error", sample.Error,
+			))
+		}
+		slog.Info("scraper provider execution summary", attrs...)
+	}
+}
+
 func runAdapterTask(ctx context.Context, t adapterTask, req domain.ScrapeRequest) ([]domain.Job, error) {
-	if t.batch {
-		batchAdapter := t.adapter.(ports.BatchJobSource)
+	switch t.mode {
+	case ports.DiscoveryBatch:
+		batchAdapter, ok := t.adapter.(ports.BatchJobSource)
+		if !ok {
+			return nil, fmt.Errorf("pipeline: provider %s does not implement batch discovery", t.provider)
+		}
 		return batchAdapter.SearchBatch(ctx, t.keywords, req)
+	case ports.DiscoveryCatalog:
+		catalogAdapter, ok := t.adapter.(ports.CatalogJobSource)
+		if !ok {
+			return nil, fmt.Errorf("pipeline: provider %s does not implement catalog discovery", t.provider)
+		}
+		return catalogAdapter.SearchCatalog(ctx, t.keywords, req)
 	}
 
 	keyword := ""

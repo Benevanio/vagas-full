@@ -3,7 +3,6 @@ package pipeline
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
@@ -19,7 +18,7 @@ func filterAdaptersByCadence(ctx context.Context, rdb *redis.Client, adapterList
 	filtered := make([]ports.JobSource, 0, len(adapterList))
 
 	for _, adapter := range adapterList {
-		if !strings.EqualFold(adapter.SourceName(), "Jooble") {
+		if ports.CapabilitiesOf(adapter).Provider != ports.ProviderJooble {
 			filtered = append(filtered, adapter)
 			continue
 		}

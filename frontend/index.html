@@ -5,35 +5,7 @@
     <link rel="icon" type="image/png" href="public/icone.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <script>
-      (function () {
-        const root = document.documentElement;
-
-
-        const storedPreference =
-          localStorage.getItem("jobs-theme-preference") ||
-          localStorage.getItem("theme") ||
-          localStorage.getItem("vite-ui-theme");
-
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-
-        const themePreference = storedPreference === "light" || storedPreference === "dark" || storedPreference === "system"
-          ? storedPreference
-          : "system";
-
-        const resolvedTheme = themePreference === "system"
-          ? (prefersDark ? "dark" : "light")
-          : themePreference;
-
-        if (resolvedTheme === "dark") {
-          root.classList.add("dark");
-        } else {
-          root.classList.remove("dark");
-        }
-
-        root.setAttribute("data-theme", resolvedTheme);
-      })();
-    </script>
+    <script type="module" src="/src/theme-bootstrap.ts"></script>
 
     <title><Cand!Date!></title>
   </head>

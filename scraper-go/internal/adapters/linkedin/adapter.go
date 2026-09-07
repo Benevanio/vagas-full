@@ -16,6 +16,7 @@ import (
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/dedup"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/domain"
 	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/jobstore"
+	"github.com/Benevanio/Jobs_Scraper_Global/scraper-go/internal/ports"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -26,19 +27,24 @@ const defaultLinkedInKeywordSlotSize = 30
 
 type LinkedInAdapter struct {
 	client     *http.Client
-	semaphore  chan struct{}
 	mu         sync.Mutex
 	nextOffset int
 }
 
 func NewLinkedIn() *LinkedInAdapter {
 	return &LinkedInAdapter{
-		client:    &http.Client{Timeout: 1 * time.Minute},
-		semaphore: make(chan struct{}, 5),
+		client: &http.Client{Timeout: 1 * time.Minute},
 	}
 }
 
 func (a *LinkedInAdapter) SourceName() string { return "linkedin" }
+
+func (a *LinkedInAdapter) Capabilities() ports.SourceCapabilities {
+	return ports.SourceCapabilities{
+		Provider: ports.ProviderLinkedIn,
+		Mode:     ports.DiscoveryBatch,
+	}
+}
 
 func linkedinKeywordSlotSize() int {
 	value := strings.TrimSpace(os.Getenv("LINKEDIN_KEYWORD_SLOT_SIZE"))
@@ -261,9 +267,6 @@ func dedupeLinkedIn(jobs []domain.Job) []domain.Job {
 }
 
 func (a *LinkedInAdapter) Search(ctx context.Context, keyword string, req domain.ScrapeRequest) ([]domain.Job, error) {
-	a.semaphore <- struct{}{}
-	defer func() { <-a.semaphore }()
-
 	return a.searchKeyword(ctx, keyword, req)
 }
 
@@ -280,50 +283,25 @@ func (a *LinkedInAdapter) SearchBatch(ctx context.Context, keywords []string, re
 		)
 	}
 
-	type searchResult struct {
-		jobs []domain.Job
-		err  error
-	}
-
-	results := make(chan searchResult, len(slot))
-	var wg sync.WaitGroup
-
+	var allJobs []domain.Job
+	var firstErr error
 	for _, keyword := range slot {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
 		keyword = strings.TrimSpace(keyword)
 		if keyword == "" {
 			continue
 		}
 
-		wg.Add(1)
-		go func(keyword string) {
-			defer wg.Done()
-
-			select {
-			case a.semaphore <- struct{}{}:
-				defer func() { <-a.semaphore }()
-			case <-ctx.Done():
-				results <- searchResult{err: ctx.Err()}
-				return
-			}
-
-			jobs, err := a.searchKeyword(ctx, keyword, req)
-			results <- searchResult{jobs: jobs, err: err}
-		}(keyword)
-	}
-
-	wg.Wait()
-	close(results)
-
-	var allJobs []domain.Job
-	var firstErr error
-	for result := range results {
-		if result.err != nil {
+		jobs, err := a.searchKeyword(ctx, keyword, req)
+		if err != nil {
 			if firstErr == nil {
-				firstErr = result.err
+				firstErr = err
 			}
 			continue
 		}
-		allJobs = append(allJobs, result.jobs...)
+		allJobs = append(allJobs, jobs...)
 	}
 	if len(allJobs) > 0 {
 		return dedupeLinkedIn(allJobs), nil
@@ -380,10 +358,8 @@ func (a *LinkedInAdapter) searchKeyword(ctx context.Context, keyword string, req
 			// 429 → back-off e tenta a mesma página uma vez
 			if strings.Contains(err.Error(), "429") {
 				backoff := 15 * time.Second
-				select {
-				case <-ctx.Done():
-					return dedupeLinkedIn(allJobs), nil
-				case <-time.After(backoff):
+				if err := adapterutil.Wait(ctx, backoff); err != nil {
+					return nil, err
 				}
 				jobs, err = a.fetchJobsChunk(ctx, keyword, req, start)
 				if err != nil {
@@ -413,10 +389,8 @@ func (a *LinkedInAdapter) searchKeyword(ctx context.Context, keyword string, req
 		allJobs = append(allJobs, normalizedJobs...)
 
 		if pageIndex < maxPages-1 {
-			select {
-			case <-ctx.Done():
-				return dedupeLinkedIn(allJobs), nil
-			case <-time.After(waitBetween):
+			if err := adapterutil.Wait(ctx, waitBetween); err != nil {
+				return nil, err
 			}
 		}
 	}
