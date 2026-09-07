@@ -15,7 +15,7 @@ function makeDatabase() {
   const update = vi.fn();
   const remove = vi.fn();
 
-  return {
+  const database: Record<string, unknown> = {
     query: {
       users: { findFirst: vi.fn() },
       userPreferences: { findFirst: vi.fn() },
@@ -23,6 +23,19 @@ function makeDatabase() {
     select,
     update,
     delete: remove,
+  };
+  // `transaction` roda o callback com o próprio mock como `tx`, para que as
+  // asserções sobre update/delete continuem valendo dentro da transação.
+  database.transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+    cb(database),
+  );
+
+  return database as typeof database & {
+    query: { users: { findFirst: ReturnType<typeof vi.fn> }; userPreferences: { findFirst: ReturnType<typeof vi.fn> } };
+    select: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    transaction: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -99,6 +112,9 @@ describe("PrivacyService", () => {
     });
 
     await expect(service.deleteAccount("user-1")).resolves.toBeUndefined();
+    // Anonimizar + excluir tem que acontecer numa transação só, senão uma
+    // falha no DELETE deixaria a conta viva com os logs já anonimizados.
+    expect(database.transaction).toHaveBeenCalledOnce();
     expect(updateWhere).toHaveBeenCalledOnce();
     expect(database.update.mock.results[0].value.set).toHaveBeenCalledWith({
       actorId: null,

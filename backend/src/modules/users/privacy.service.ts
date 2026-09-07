@@ -77,20 +77,26 @@ export class PrivacyService {
   }
 
   async deleteAccount(userId: string): Promise<void> {
-    await this.database
-      .update(auditLogs)
-      .set({
-        actorId: null,
-        targetId: null,
-        metadata: null,
-        ip: null,
-      })
-      .where(or(eq(auditLogs.actorId, userId), eq(auditLogs.targetId, userId)));
+    // Anonimização e exclusão precisam ser atômicas: se o DELETE falhar depois
+    // do UPDATE, a conta continuaria existindo com os logs já anonimizados —
+    // exclusão pela metade, sem como refazer a associação.
+    await this.database.transaction(async (tx) => {
+      await tx
+        .update(auditLogs)
+        .set({
+          actorId: null,
+          targetId: null,
+          metadata: null,
+          ip: null,
+        })
+        .where(or(eq(auditLogs.actorId, userId), eq(auditLogs.targetId, userId)));
 
-    const [deleted] = await this.database
-      .delete(users)
-      .where(eq(users.id, userId))
-      .returning({ id: users.id });
-    if (!deleted) throw AppError.notFound("Usuário não encontrado");
+      const [deleted] = await tx
+        .delete(users)
+        .where(eq(users.id, userId))
+        .returning({ id: users.id });
+      // Lançar aqui desfaz a anonimização junto (rollback da transação).
+      if (!deleted) throw AppError.notFound("Usuário não encontrado");
+    });
   }
 }
