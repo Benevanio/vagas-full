@@ -1,6 +1,6 @@
 {
-  "id": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
-  "prevId": "979ff559-fdaa-4fd2-ad0e-00019bbbd23e",
+  "id": "a6b45805-a617-4bfa-83dd-bbf3d21f79e6",
+  "prevId": "849617ba-d9b9-4539-8b4a-bda2c9de83ce",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -661,7 +661,7 @@
           "name": "job_link",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "job_title": {
           "name": "job_title",

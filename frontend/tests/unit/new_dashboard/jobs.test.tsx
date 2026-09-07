@@ -17,10 +17,18 @@ import type {
 
 const dashboardApiMock = vi.hoisted(() => ({
   getDashboardSavedJobEvents: vi.fn(),
+  getDashboardApplicationNotes: vi.fn(),
+  createDashboardApplicationNote: vi.fn(),
+  updateDashboardApplicationNote: vi.fn(),
+  deleteDashboardApplicationNote: vi.fn(),
 }));
 
 vi.mock("@/domains/new_dashboard/infrastructure/dashboardJobsApi", () => ({
   getDashboardSavedJobEvents: dashboardApiMock.getDashboardSavedJobEvents,
+  getDashboardApplicationNotes: dashboardApiMock.getDashboardApplicationNotes,
+  createDashboardApplicationNote: dashboardApiMock.createDashboardApplicationNote,
+  updateDashboardApplicationNote: dashboardApiMock.updateDashboardApplicationNote,
+  deleteDashboardApplicationNote: dashboardApiMock.deleteDashboardApplicationNote,
 }));
 
 const baseJob: Job = {
@@ -58,6 +66,32 @@ function makeJobs(count: number): Job[] {
 describe("new_dashboard job components", () => {
   beforeEach(() => {
     dashboardApiMock.getDashboardSavedJobEvents.mockReset();
+    dashboardApiMock.getDashboardApplicationNotes.mockReset();
+    dashboardApiMock.createDashboardApplicationNote.mockReset();
+    dashboardApiMock.updateDashboardApplicationNote.mockReset();
+    dashboardApiMock.deleteDashboardApplicationNote.mockReset();
+    dashboardApiMock.getDashboardApplicationNotes.mockResolvedValue([]);
+  });
+
+  it("cria, edita e remove notas privadas no detalhe da candidatura", async () => {
+    dashboardApiMock.createDashboardApplicationNote.mockResolvedValue({
+      id: "note-1", content: "Preparar portfólio", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    });
+    dashboardApiMock.updateDashboardApplicationNote.mockResolvedValue({
+      id: "note-1", content: "Portfólio enviado", createdAt: "2026-01-01", updatedAt: "2026-01-02",
+    });
+
+    render(<JobDetailModal job={baseJob} isTracked onClose={vi.fn()} onStatusChange={vi.fn()} />);
+    await screen.findByText("Nenhuma nota adicionada.");
+    fireEvent.change(screen.getByLabelText("Nova nota"), { target: { value: "Preparar portfólio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar nota" }));
+    await screen.findByText("Preparar portfólio");
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.change(screen.getByLabelText("Nova nota"), { target: { value: "Portfólio enviado" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar nota" }));
+    await screen.findByText("Portfólio enviado");
+    fireEvent.click(screen.getByRole("button", { name: "Remover" }));
+    await waitFor(() => expect(dashboardApiMock.deleteDashboardApplicationNote).toHaveBeenCalledWith("job-1", "note-1"));
   });
 
   it("exibe a timeline em ordem cronológica e atualiza após mudar o status", async () => {
@@ -389,7 +423,11 @@ describe("new_dashboard job components", () => {
       />,
     );
 
-    expect(screen.getByText(/payload da vaga/i)).toBeInTheDocument();
+    // PAV-92: "Payload da vaga" virou "Detalhes adicionais" e não duplica
+    // mais campos já representados em outro lugar do detalhe. O `url` de
+    // baseJob.rawPayload é igual a `jobLink` (já mostrado em "Abrir vaga"),
+    // então o bloco não tem nada extra pra mostrar aqui e não renderiza.
+    expect(screen.queryByText(/detalhes adicionais/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /abrir vaga/i })).toHaveAttribute(
       "href",
       baseJob.jobLink,
@@ -508,6 +546,22 @@ describe("new_dashboard job components", () => {
       .toHaveAttribute("href", "http://localhost:3000/vaga");
     expect(container.querySelector("img")).not.toBeInTheDocument();
     expect(screen.getByText("Conteúdo preservado")).toBeInTheDocument();
+  });
+
+  it("não propaga atributos ativos nem protocolos não permitidos", () => {
+    const { container } = render(
+      <FormattedJobDescription
+        description={[
+          '<a href="data:text/html,blocked">Link de dados</a>',
+          '<p onclick="alert(1)">Texto seguro</p>',
+          '<iframe src="https://example.com"></iframe>',
+        ].join("")}
+      />,
+    );
+
+    expect(screen.getByText("Link de dados").tagName).toBe("SPAN");
+    expect(screen.getByText("Texto seguro")).not.toHaveAttribute("onclick");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
   });
 
   it("valida e salva uma vaga manual nova", () => {

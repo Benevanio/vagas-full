@@ -216,5 +216,20 @@ describe("AuthService", () => {
         profile: mockProfile,
       });
     });
+
+    it("uses a fallback name when the social profile has no name", async () => {
+      mocks.exchangeCode.mockResolvedValueOnce(mockProfile);
+      mocks.findOrCreateUser.mockResolvedValueOnce({
+        user: { ...mockUser, displayName: null, username: null },
+        isNewUser: true,
+      });
+
+      await service.handleCallback(validCallbackParams);
+
+      expect(mocks.sendWelcome).toHaveBeenCalledWith({
+        email: mockUser.email,
+        name: "Usuário",
+      });
+    });
   });
 });
