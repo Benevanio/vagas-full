@@ -210,6 +210,42 @@ describe("users.mapper", () => {
     });
   });
 
+  it("strips raw encrypted/hash fields from the public user object", () => {
+    setValidSecurityEnv();
+
+    const publicUser = toPublicUser(
+      baseUser({
+        emailEncrypted: encryptText("ada@example.com"),
+        emailHash: "hash",
+        firstNameEncrypted: encryptText("Ada"),
+        lastNameEncrypted: encryptText("Lovelace"),
+        displayNameEncrypted: encryptText("Ada Lovelace"),
+        avatarUrlEncrypted: encryptText("https://example.com/ada.png"),
+        phoneEncrypted: encryptText("+5534999999999"),
+        cpfEncrypted: encryptText("12345678901"),
+        cpfHash: "hash",
+        technologiesEncrypted: encryptText(JSON.stringify(["TypeScript"])),
+        technologyExperiencesEncrypted: encryptText(
+          JSON.stringify([{ name: "TypeScript", years: 4 }]),
+        ),
+        levelEncrypted: encryptText("pleno"),
+      }),
+    );
+
+    expect(publicUser).not.toHaveProperty("emailEncrypted");
+    expect(publicUser).not.toHaveProperty("emailHash");
+    expect(publicUser).not.toHaveProperty("firstNameEncrypted");
+    expect(publicUser).not.toHaveProperty("lastNameEncrypted");
+    expect(publicUser).not.toHaveProperty("displayNameEncrypted");
+    expect(publicUser).not.toHaveProperty("avatarUrlEncrypted");
+    expect(publicUser).not.toHaveProperty("phoneEncrypted");
+    expect(publicUser).not.toHaveProperty("cpfEncrypted");
+    expect(publicUser).not.toHaveProperty("cpfHash");
+    expect(publicUser).not.toHaveProperty("technologiesEncrypted");
+    expect(publicUser).not.toHaveProperty("technologyExperiencesEncrypted");
+    expect(publicUser).not.toHaveProperty("levelEncrypted");
+  });
+
   it("falls back to plain technologies for invalid encrypted technologies", () => {
     const publicUser = toPublicUser(
       baseUser({

@@ -81,8 +81,8 @@ O fluxo oficial do projeto (alinhado ao [contribuition.md](contribuition.md) e a
    - **Ao criar esse branch, o card sai de Todo/Backlog e vai para `In Progress` automaticamente** (seção 4). Você não precisa arrastar o card.
 
 4. **Desenvolver e commitar em blocos pequenos.**
-   - Faça commits coerentes, com o identificador do card na mensagem (ex: `PAV-93 ...`).
-   - Rode os testes/lint localmente antes de subir (ver [contribuition.md](contribuition.md) e [TESTING.md](TESTING.md)).
+   - Faça commits coerentes usando Conventional Commits (`tipo: descrição`, ver [contribuition.md](contribuition.md) seção 4), incluindo o identificador do card na mensagem (ex: `docs: cria guia de uso do Linear e integração com GitHub (PAV-93)`).
+   - Rode os testes/lint localmente antes de subir (ver [contribuition.md](contribuition.md) e [TESTING.md](TESTING.md)). O hook `commit-msg` (Husky + commitlint) valida o formato automaticamente e **não deve ser pulado com `--no-verify`** — o CI revalida as mensagens do PR de qualquer forma.
 
 5. **Abrir o Pull Request.**
    - Abra o PR do seu fork (`origin`) para o `upstream` na branch **`develop`**.
@@ -126,13 +126,13 @@ git checkout -b feature/pav-93-doc-linear-github
 
 ### b) Pela mensagem de commit
 
-Coloque o identificador do card na mensagem de commit. Padrão usado no projeto:
+Coloque o identificador do card na mensagem de commit, seguindo o padrão Conventional Commits exigido pelo `commit-msg` hook (ver [contribuition.md](contribuition.md) seção 4):
 
 ```bash
-git commit -m "PAV-93 cria guia de uso do Linear e integração com GitHub"
+git commit -m "docs: cria guia de uso do Linear e integração com GitHub (PAV-93)"
 ```
 
-Isso deixa o histórico rastreável e reforça o vínculo do trabalho com o card.
+Isso deixa o histórico rastreável, reforça o vínculo do trabalho com o card e passa na validação automática do commitlint.
 
 ### c) Pelo Pull Request
 
@@ -187,11 +187,11 @@ git checkout -b feature/pav-93-doc-linear-github
 
 ➡️ No Linear, o card `PAV-93` muda sozinho de **Todo** para **In Progress**.
 
-**3. Desenvolve e commita** em blocos, com o identificador na mensagem:
+**3. Desenvolve e commita** em blocos, com Conventional Commits e o identificador na mensagem:
 
 ```bash
 git add GUIA-LINEAR-GITHUB.md
-git commit -m "PAV-93 cria guia de uso do Linear e integração com GitHub"
+git commit -m "docs: cria guia de uso do Linear e integração com GitHub (PAV-93)"
 ```
 
 **4. Sobe o branch e abre o PR** para `develop` (ex.: via `/abrir-pr-jobs-scraper`):

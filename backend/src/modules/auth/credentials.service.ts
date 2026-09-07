@@ -2,7 +2,6 @@ import * as argon2 from "argon2";
 import { db } from "../../db/client";
 import { userPreferences } from "../../db/schema";
 import { credentials } from "../../db/schema/credentials";
-import type { User } from "../../db/schema/users";
 import { AppError } from "../../lib/errors";
 import { logError } from "../../logger";
 import { emailService } from "../email/email.service";
@@ -17,6 +16,7 @@ import {
   RegisterInput,
   RegisterSchema,
 } from "../types/credentials.types";
+import type { PublicUser } from "../users/users.mapper";
 import { UsersRepository } from "../users/users.repository";
 
 const argonOptions = {
@@ -27,14 +27,14 @@ const argonOptions = {
 };
 
 export class CredentialsService {
-  async findById(id: string): Promise<User | null> {
+  async findById(id: string): Promise<PublicUser | null> {
     const user = await new UsersRepository().findById(id);
     return user ?? null;
   }
 
   async register(
     input: RegisterInput,
-  ): Promise<{ user: User; session: Session }> {
+  ): Promise<{ user: PublicUser; session: Session }> {
     const { email, password, name, phone, cpf, technologies, level } =
       RegisterSchema.parse(input);
     const normalizedEmail = normalizeEmail(email);
@@ -99,7 +99,9 @@ export class CredentialsService {
     return { user, session: { userId: user.id, role: user.role } };
   }
 
-  async login(input: LoginInput): Promise<{ user: User; session: Session }> {
+  async login(
+    input: LoginInput,
+  ): Promise<{ user: PublicUser; session: Session }> {
     const { email, password } = LoginSchema.parse(input);
     const normalizedEmail = normalizeEmail(email);
     const emailHash = generateSearchableHash(normalizedEmail);

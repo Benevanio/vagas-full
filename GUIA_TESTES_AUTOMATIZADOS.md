@@ -286,6 +286,12 @@ Comando util para backend:
 npm run test --workspace=backend
 ```
 
+Outros comandos úteis (todos existem em `package.json`/workspace correspondente): `npm run test:coverage --workspace=backend`, `npm run test --workspace=frontend`, `npm run test --workspace=front_admin`, `npm run test:watch --workspace=<workspace>`.
+
+### O que o CI realmente valida
+
+O workflow `.github/workflows/ci.yml` roda, nesta ordem: `test:coverage` no frontend, `test:coverage` no backend, `lint` no frontend e `build` no frontend. Backend e frontend têm meta de cobertura de **80%** (lines/functions/branches/statements) configurada em `backend/vitest.config.js` e `frontend/vitest.config.js` — PRs que reduzirem a cobertura abaixo disso falham o CI. `front_admin` tem os mesmos scripts de teste/lint disponíveis (`front_admin/package.json`), mas **não está incluído** no workflow de CI atual; rode `npm run test --workspace=front_admin` manualmente ao alterar esse workspace.
+
 ---
 
 ## Beneficios desse padrao

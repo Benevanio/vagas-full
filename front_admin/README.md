@@ -71,7 +71,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
 ## Rotas principais
 
 - `/login`: autenticação do painel.
-- `/`: dashboard administrativo.
+- `/dashboard`: dashboard administrativo (a rota `/` redireciona automaticamente para `/dashboard`).
 - `/users`: gestão de usuários.
 - `/permissions`: permissões.
 - `/scrapers`: operação de scrapers.

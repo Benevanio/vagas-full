@@ -1,5 +1,5 @@
-import { SavedJob, User } from "../../../db/schema";
-import { toPublicUser } from "../../users/users.mapper";
+import { SavedJob } from "../../../db/schema";
+import type { PublicUser } from "../../users/users.mapper";
 
 export type TechnologyExperience = {
   name: string;
@@ -70,9 +70,8 @@ function jobMatchText(job: MatchableJob) {
   );
 }
 
-function parseTechnologiesFromUser(user: User): TechnologyExperience[] {
-  const publicUser = toPublicUser(user);
-  const experiences = publicUser.technologyExperiences;
+function parseTechnologiesFromUser(user: PublicUser): TechnologyExperience[] {
+  const experiences = user.technologyExperiences;
 
   if (Array.isArray(experiences)) {
     return experiences
@@ -86,13 +85,13 @@ function parseTechnologiesFromUser(user: User): TechnologyExperience[] {
       .filter((item): item is TechnologyExperience => Boolean(item));
   }
 
-  return (publicUser.technologies ?? [])
+  return (user.technologies ?? [])
     .map((name) => name.trim())
     .filter(Boolean)
     .map((name) => ({ name, years: 1 }));
 }
 
-export function getUserMatchTechnologies(user: User | undefined | null) {
+export function getUserMatchTechnologies(user: PublicUser | undefined | null) {
   if (!user) return [];
   return parseTechnologiesFromUser(user);
 }

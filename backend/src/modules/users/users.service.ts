@@ -1,20 +1,24 @@
 import { db } from "../../db/client";
-import { User, UserPreferences, userPreferences, users } from "../../db/schema";
+import { UserPreferences, userPreferences } from "../../db/schema";
 import { DB } from "../../db/types/types";
 import { ownedBy } from "../../lib/authorization/ownership";
 import { AppError } from "../../lib/errors";
 import { UpdateProfileData } from "../types/user.types";
+import type { PublicUser } from "./users.mapper";
 import { UpdatePreferencesData } from "./schemas/user.schemas";
 import { UsersRepository } from "./users.repository";
 
 export class UsersService {
   constructor(private readonly tx: DB = db) {}
 
-  async getUserById(id: string): Promise<User | undefined> {
+  async getUserById(id: string): Promise<PublicUser | undefined> {
     return (await new UsersRepository(this.tx).findById(id)) ?? undefined;
   }
 
-  async updateProfile(userId: string, data: UpdateProfileData): Promise<User> {
+  async updateProfile(
+    userId: string,
+    data: UpdateProfileData,
+  ): Promise<PublicUser> {
     const updated = await new UsersRepository(this.tx).updateProfile(
       userId,
       data,

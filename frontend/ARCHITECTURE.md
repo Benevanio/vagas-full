@@ -11,6 +11,8 @@ O frontend é organizado por domínios de negócio, não por tipos técnicos de 
 - `src/domains/<domain>/presentation`: páginas e componentes pertencentes ao domínio.
 - `src/shared`: primitivas de UI, assets, hooks e utilitários técnicos reutilizáveis.
 
+> Exceção: o domínio `new_dashboard` ainda não segue integralmente essas 4 camadas. Hoje ele usa uma organização própria (`components/`, `context/`, `hooks/`, `infrastructure/`, `types/`, `utils/`, `layout.tsx`, `page.tsx`), sem pastas `domain/`, `application/` ou `presentation/` separadas. `auth`, `jobs` e `marketing` seguem o padrão de 4 camadas descrito acima.
+
 ## Domínios
 
 - `auth`: estado de sessão, acesso à API de credenciais/OAuth e telas de login, registro e callback.

@@ -1,51 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { User } from "../../../../src/db/schema";
-import { encryptText } from "../../../../src/lib/security/encryption";
+import type { PublicUser } from "../../../../src/modules/users/users.mapper";
 import {
   getUserMatchTechnologies,
   jobNotificationIdentity,
   scoreJobWithTechnologies,
 } from "../../../../src/modules/jobs/jobMatch.service";
 
-const originalEnv = {
-  ENCRYPTION_MASTER_KEY: process.env.ENCRYPTION_MASTER_KEY,
-  ENCRYPTION_KEY_ID: process.env.ENCRYPTION_KEY_ID,
-  SEARCH_KEY: process.env.SEARCH_KEY,
-};
-
-function setValidSecurityEnv() {
-  process.env.ENCRYPTION_MASTER_KEY =
-    "0000000000000000000000000000000000000000000000000000000000000000";
-  process.env.ENCRYPTION_KEY_ID = "job-match-test";
-  process.env.SEARCH_KEY = "job-match-search-key";
-}
-
-function baseUser(overrides: Partial<User> = {}): User {
+function basePublicUser(overrides: Partial<PublicUser> = {}): PublicUser {
   return {
     id: "user-1",
     firstName: null,
-    firstNameEncrypted: null,
     lastName: null,
-    lastNameEncrypted: null,
     displayName: null,
-    displayNameEncrypted: null,
     username: "user",
     email: "user@example.com",
-    emailEncrypted: null,
-    emailHash: null,
     emailVerified: false,
     avatarUrl: null,
-    avatarUrlEncrypted: null,
     phone: null,
-    phoneEncrypted: null,
     cpf: null,
-    cpfEncrypted: null,
-    cpfHash: null,
     technologies: null,
-    technologiesEncrypted: null,
-    technologyExperiencesEncrypted: null,
+    technologyExperiences: null,
     level: null,
-    levelEncrypted: null,
     role: "user",
     isBlocked: false,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -61,32 +36,24 @@ describe("jobMatch.service", () => {
     expect(getUserMatchTechnologies(undefined)).toEqual([]);
   });
 
-  it("extrai experiências criptografadas do usuário", () => {
-    setValidSecurityEnv();
-
-    const user = baseUser({
-      technologyExperiencesEncrypted: encryptText(
-        JSON.stringify([
-          { name: "TypeScript", years: 4 },
-          { name: "Node.js", years: -1 },
-          { name: "", years: 10 },
-          null,
-        ]),
-      ),
+  it("extrai experiências de tecnologia do usuário (já decifradas)", () => {
+    const user = basePublicUser({
+      technologyExperiences: [
+        { name: "TypeScript", years: 4 },
+        { name: "Node.js", years: -1 },
+        { name: "", years: 10 },
+        null,
+      ],
     });
 
     expect(getUserMatchTechnologies(user)).toEqual([
       { name: "TypeScript", years: 4 },
       { name: "Node.js", years: 0 },
     ]);
-
-    process.env.ENCRYPTION_MASTER_KEY = originalEnv.ENCRYPTION_MASTER_KEY;
-    process.env.ENCRYPTION_KEY_ID = originalEnv.ENCRYPTION_KEY_ID;
-    process.env.SEARCH_KEY = originalEnv.SEARCH_KEY;
   });
 
   it("usa technologies como fallback quando não há experiências", () => {
-    const user = baseUser({
+    const user = basePublicUser({
       technologies: ["React", " ", "Node.js"],
     });
 
