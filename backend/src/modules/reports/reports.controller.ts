@@ -22,9 +22,9 @@ export class ReportsController {
     const userId = await this.requireUserId(req, res);
 
     // já validado/normalizado por `validate({ query })` na rota.
-    const { from, to } = req.query as unknown as ReportsKpisQuery;
+    const query = req.query as unknown as ReportsKpisQuery;
 
-    const report = await this.service.getKpis(userId, { from, to });
+    const report = await this.service.getKpis(userId, query);
     return res.json(report);
   }
 }

@@ -85,8 +85,15 @@ function monthsAgoUTC(months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Converte um preset de período em `{ from, to }` para a query do endpoint. "tudo" não envia `from`. */
-export function periodToRange(preset: PeriodPreset): { from?: string; to?: string } {
+export type ReportsKpisParams = { from?: string; to?: string; all?: "true" };
+
+/**
+ * Converte um preset de período em params para a query do endpoint.
+ * "tudo" manda `all=true` — o backend calcula o histórico completo a partir
+ * da atividade real do usuário, em vez de cair no default de 90 dias que
+ * `{}` (ausência de from/to) provocaria.
+ */
+export function periodToRange(preset: PeriodPreset): ReportsKpisParams {
   switch (preset) {
     case "30d":
       return { from: daysAgoUTC(30), to: todayUTC() };
@@ -95,13 +102,14 @@ export function periodToRange(preset: PeriodPreset): { from?: string; to?: strin
     case "12m":
       return { from: monthsAgoUTC(12), to: todayUTC() };
     case "tudo":
-      return {};
+      return { all: "true" };
   }
 }
 
 export async function getReportsKpis(
-  params: { from?: string; to?: string } = {},
+  params: ReportsKpisParams = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<ReportsKpis> {
-  const { data } = await api.get("/reports/kpis", { params });
+  const { data } = await api.get("/reports/kpis", { params, signal: options.signal });
   return toReportsKpis(data);
 }

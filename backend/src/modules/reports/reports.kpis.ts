@@ -41,6 +41,47 @@ export interface KpiReport {
 
 const DAY_MS = 86_400_000;
 
+/** 00:00:00.000 UTC do dia de `d`. */
+function startOfDayUTC(d: Date): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0),
+  );
+}
+
+/**
+ * Início do dia (UTC) da atividade mais antiga do usuário. Considera as mesmas
+ * datas que podem virar "momento de candidatura" em `computeKpis`: `createdAt`
+ * e `appliedAt` da vaga (que pode ser retroativo em cadastro manual) e o
+ * `createdAt` dos eventos. `null` sem nenhuma atividade.
+ *
+ * Usado pelo preset "Tudo" (`all=true`) para representar o histórico completo
+ * de verdade, em vez do default de 90 dias.
+ */
+export function earliestActivityDate(
+  savedJobs: KpiSavedJob[],
+  events: KpiEvent[],
+): Date | null {
+  let earliest: Date | null = null;
+
+  const consider = (date: Date | null) => {
+    if (date && (!earliest || date.getTime() < earliest.getTime())) {
+      earliest = date;
+    }
+  };
+
+  for (const job of savedJobs) {
+    consider(job.createdAt);
+    // `appliedAt` retroativo é o momento de candidatura em `computeKpis`;
+    // ignorá-lo aqui faria "Tudo" cortar justamente essa candidatura.
+    consider(job.appliedAt);
+  }
+  for (const event of events) {
+    consider(event.createdAt);
+  }
+
+  return earliest ? startOfDayUTC(earliest) : null;
+}
+
 /** Segunda-feira 00:00:00.000 UTC da semana ISO que contém `d`. */
 function startOfIsoWeekUTC(d: Date): Date {
   const date = new Date(

@@ -87,6 +87,7 @@ describe("Integration - Reports Routes", () => {
 
       expect(res.body).toEqual(fixtureReport);
       expect(mockReportsService.getKpis).toHaveBeenCalledWith("user_abc", {
+        all: false,
         from: new Date("2025-12-15T00:00:00.000Z"),
         to: new Date("2026-03-15T23:59:59.999Z"),
       });
@@ -116,8 +117,30 @@ describe("Integration - Reports Routes", () => {
         .expect(200);
 
       expect(mockReportsService.getKpis).toHaveBeenCalledWith("user_abc", {
+        all: false,
         from: new Date("2026-01-01T00:00:00.000Z"),
         to: new Date("2026-01-31T23:59:59.999Z"),
+      });
+    });
+
+    it("com all=true, repassa { all: true, to } ao service, sem janela de 90 dias", async () => {
+      await request(app).get(`${BASE}/kpis`).query({ all: "true" }).expect(200);
+
+      expect(mockReportsService.getKpis).toHaveBeenCalledWith("user_abc", {
+        all: true,
+        to: new Date("2026-03-15T23:59:59.999Z"),
+      });
+    });
+
+    it("all=true ignora 'from' enviado junto (all tem prioridade)", async () => {
+      await request(app)
+        .get(`${BASE}/kpis`)
+        .query({ all: "true", from: "2026-01-01" })
+        .expect(200);
+
+      expect(mockReportsService.getKpis).toHaveBeenCalledWith("user_abc", {
+        all: true,
+        to: new Date("2026-03-15T23:59:59.999Z"),
       });
     });
 

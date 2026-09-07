@@ -50,10 +50,14 @@ function parseEndOfDay(dateStr: string): Date {
   return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 }
 
-export interface ReportsKpisQuery {
-  from: Date;
-  to: Date;
-}
+/**
+ * `all: true` significa "todo o histórico disponível do usuário" — o `from`
+ * não é um valor fixo, tem que ser calculado a partir da atividade real (ver
+ * `earliestActivityDate` em `reports.kpis.ts`), por isso não vem aqui.
+ */
+export type ReportsKpisQuery =
+  | { all: true; to: Date }
+  | { all: false; from: Date; to: Date };
 
 /**
  * Factory determinística: `now` é injetável para teste. A instância usada em
@@ -66,16 +70,25 @@ export function buildReportsKpisQuerySchema(now: Date = new Date()) {
     .object({
       from: dateStringSchema.optional(),
       to: dateStringSchema.optional(),
+      // string porque query params chegam como string; "true" é o único
+      // valor que ativa o modo "todo o histórico" (qualquer outra coisa, ou
+      // ausência, mantém o comportamento de janela por data).
+      all: z.enum(["true", "false"]).optional(),
     })
-    .transform((value) => {
+    .transform((value): ReportsKpisQuery => {
       const to = value.to ? parseEndOfDay(value.to) : endOfDayUTC(now);
+
+      if (value.all === "true") {
+        return { all: true as const, to };
+      }
+
       const from = value.from
         ? parseStartOfDay(value.from)
         : startOfDayUTC(new Date(to.getTime() - DEFAULT_WINDOW_DAYS * DAY_MS));
 
-      return { from, to };
+      return { all: false as const, from, to };
     })
-    .refine((range) => range.from.getTime() <= range.to.getTime(), {
+    .refine((range) => range.all || range.from.getTime() <= range.to.getTime(), {
       message: "O parâmetro 'from' não pode ser depois de 'to'.",
       path: ["from"],
     });

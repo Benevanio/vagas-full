@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeKpis,
+  earliestActivityDate,
   isoWeekLabel,
   isoWeekStart,
   type KpiEvent,
@@ -429,5 +430,89 @@ describe("isoWeekStart / isoWeekLabel — bordas ISO-8601", () => {
     expect(isoWeekStart(new Date("2024-01-01T00:00:00.000Z"))).toBe("2024-01-01");
     expect(isoWeekLabel(new Date("2024-12-31T00:00:00.000Z"))).toBe("2025-W01");
     expect(isoWeekLabel(new Date("2024-02-29T00:00:00.000Z"))).toBe("2024-W09");
+  });
+});
+
+// ─── earliestActivityDate (preset "Tudo") ────────────────────────────────────
+
+describe("earliestActivityDate", () => {
+  it("retorna a data mais antiga entre vagas salvas e eventos, misturados", () => {
+    const savedJobs = [
+      job({ id: "a", createdAt: new Date("2025-06-15T10:00:00.000Z") }),
+      job({ id: "b", createdAt: new Date("2024-03-02T08:00:00.000Z") }),
+    ];
+    const events = [
+      event({
+        id: "e1",
+        savedJobId: "a",
+        fromStatus: "saved",
+        toStatus: "applied",
+        createdAt: new Date("2025-01-01T00:00:00.000Z"),
+      }),
+    ];
+
+    // A mais antiga é a vaga "b" (2024-03-02), não o evento nem a vaga "a".
+    expect(earliestActivityDate(savedJobs, events)).toEqual(
+      new Date("2024-03-02T00:00:00.000Z"),
+    );
+  });
+
+  it("normaliza para início do dia em UTC, mesmo com horário no meio do dia", () => {
+    const savedJobs = [job({ id: "a", createdAt: new Date("2025-06-15T23:59:00.000Z") })];
+
+    expect(earliestActivityDate(savedJobs, [])).toEqual(
+      new Date("2025-06-15T00:00:00.000Z"),
+    );
+  });
+
+  it("sem nenhuma vaga nem evento, retorna null", () => {
+    expect(earliestActivityDate([], [])).toBeNull();
+  });
+
+  it("considera appliedAt retroativo, anterior ao createdAt da vaga", () => {
+    // Cadastro manual de uma vaga em que o usuário já havia se candidatado
+    // antes: `appliedAt` é o momento de candidatura usado por computeKpis.
+    const savedJobs = [
+      job({
+        id: "a",
+        status: "applied",
+        appliedAt: new Date("2024-02-20T10:00:00.000Z"),
+        createdAt: new Date("2026-09-01T00:00:00.000Z"),
+      }),
+    ];
+
+    expect(earliestActivityDate(savedJobs, [])).toEqual(
+      new Date("2024-02-20T00:00:00.000Z"),
+    );
+  });
+
+  it("ignora appliedAt nulo sem quebrar", () => {
+    const savedJobs = [
+      job({
+        id: "a",
+        appliedAt: null,
+        createdAt: new Date("2025-04-05T12:00:00.000Z"),
+      }),
+    ];
+
+    expect(earliestActivityDate(savedJobs, [])).toEqual(
+      new Date("2025-04-05T00:00:00.000Z"),
+    );
+  });
+
+  it("considera só eventos quando não há vagas salvas (defensivo)", () => {
+    const events = [
+      event({
+        id: "e1",
+        savedJobId: "a",
+        fromStatus: "saved",
+        toStatus: "applied",
+        createdAt: new Date("2023-11-20T00:00:00.000Z"),
+      }),
+    ];
+
+    expect(earliestActivityDate([], events)).toEqual(
+      new Date("2023-11-20T00:00:00.000Z"),
+    );
   });
 });

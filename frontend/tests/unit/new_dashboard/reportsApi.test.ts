@@ -92,8 +92,8 @@ describe("reportsApi — periodToRange", () => {
     });
   });
 
-  it("tudo → sem 'from'/'to'", () => {
-    expect(periodToRange("tudo")).toEqual({});
+  it("tudo → all=true, sem 'from' (backend calcula o histórico completo)", () => {
+    expect(periodToRange("tudo")).toEqual({ all: "true" });
   });
 });
 
@@ -141,5 +141,28 @@ describe("reportsApi — getReportsKpis", () => {
     await getReportsKpis();
 
     expect(apiMock.get).toHaveBeenCalledWith("/reports/kpis", { params: {} });
+  });
+
+  it("repassa o AbortSignal recebido para o axios (cancelamento de verdade)", async () => {
+    apiMock.get.mockResolvedValue({
+      data: {
+        range: { from: "2026-01-01", to: "2026-01-31" },
+        weeklyApplications: [],
+        interviewRate: { value: 0, insufficientData: true },
+        stageDurations: {
+          savedToApplied: null,
+          appliedToInterviewing: null,
+          interviewingToOutcome: null,
+        },
+      },
+    });
+    const controller = new AbortController();
+
+    await getReportsKpis({ all: "true" }, { signal: controller.signal });
+
+    expect(apiMock.get).toHaveBeenCalledWith("/reports/kpis", {
+      params: { all: "true" },
+      signal: controller.signal,
+    });
   });
 });
